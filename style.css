@@ -544,3 +544,18 @@ a { color: var(--accent); }
 .tour-dots i.on { background: var(--accent-bright); }
 .tour-body { font-size: 1.02rem; line-height: 1.55; margin: 0; }
 .water-line { display: block; margin-top: 8px; font-size: .85rem; color: var(--water); text-decoration: none; }
+
+/* ---------- QA pass: extras behind ⋯, meal quick-add, nudges ---------- */
+.more-btn { width: 38px; height: 38px; font-size: 1.2rem; flex: none; }
+.action-list { display: grid; gap: 8px; }
+.action-row { display: flex; flex-direction: column; gap: 2px; text-align: left; border: 1px solid var(--line); background: var(--surface); border-radius: 14px; padding: 12px 14px; }
+.action-row span { color: var(--muted); font-size: .85rem; }
+.action-row:hover { border-color: var(--accent); }
+.note-btn.add { font-size: 1.3rem; font-weight: 700; color: var(--accent); }
+.meal-empty { display: block; width: 100%; text-align: left; border: 1.5px dashed var(--line); background: transparent; color: var(--muted); border-radius: 14px; padding: 12px 14px; font-weight: 600; }
+.meal-empty:hover { border-color: var(--accent); color: var(--accent); }
+.nudge-card { display: block; margin-bottom: 12px; box-shadow: none; border: 1.5px solid var(--line); }
+.nudge-card > div:first-child { display: flex; flex-direction: column; }
+.nudge-card span { color: var(--muted); font-size: .9rem; }
+.today-actions { align-items: center; }
+#foodCount { margin: 2px 4px 8px; }

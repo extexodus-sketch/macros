@@ -72,7 +72,10 @@ window.MacrosApp = { start(ctx) {
     { k: 'f', label: 'Fat', cls: 'f', kcalPerG: 9 },
     { k: 'fib', label: 'Fiber', cls: 'fib' },
   ];
-  const defaultMeal = () => (MEALS.includes(settings.lastMeal) ? settings.lastMeal : 'Breakfast');
+  // Meal follows the clock (or the meal you tapped "+ Add" on from the Dashboard)
+  let pendingMeal = null;
+  const mealByTime = () => { const h = new Date().getHours(); return h < 10 ? 'Breakfast' : h < 14 ? 'Lunch' : h < 17 ? 'Snacks' : h < 21 ? 'Dinner' : 'Snacks'; };
+  const defaultMeal = () => pendingMeal || mealByTime();
   const when = ts => new Date(ts).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
   // ---------- Toast ----------
@@ -85,7 +88,8 @@ window.MacrosApp = { start(ctx) {
   }
 
   // ---------- Shared bits ----------
-  const badge = f => `<span class="badge ${f.sugg ? 'E' : f.src}" title="Source: ${esc(f.sugg ? 'Estimate (Suggestions)' : E.SOURCES[f.src])}">${esc(f.sugg ? 'Estimate' : E.SOURCES[f.src])}</span>`;
+  const tag = f => f.sugg || f.custom ? badge(f) : '';
+  const badge = f => `<span class="badge ${f.sugg ? 'E' : f.src}" title="Source: ${esc(f.sugg ? 'Recipe estimate' : E.SOURCES[f.src])}">${esc(f.sugg ? 'Estimate' : E.SOURCES[f.src])}</span>`;
   function macroTiles(m, showPct) {
     const kc = (m.p * 4 + m.c * 4 + m.f * 9) || 1;
     return `<div class="macro-grid">${MACROS.map(x => `
@@ -112,6 +116,7 @@ window.MacrosApp = { start(ctx) {
       day: `<ul class="legend-list"><li>Days only change when you tap <b>Start Day ${curDay().n + 1}</b>, never at midnight.</li>
           <li>Tap the calories at the top right to switch between what you’ve eaten and what’s left.</li>
           <li>You can go back to past days with the arrows and still edit them.</li>
+          <li>Tap <b>+</b> next to a meal to add food straight to it.</li>
           <li>Your targets come from your setup and current phase. Change them in Menu → Goals.</li>
           <li>Tap the note icon next to a meal to write down how it went.</li>
           <li>Swipe left, or tap <b>This week</b>, to see Monday to Sunday.</li></ul>`,
@@ -120,12 +125,11 @@ window.MacrosApp = { start(ctx) {
           <li><b class="n">2</b><div><b>Check the matches.</b> Fix any amount, switch between cooked and raw, or pick a different food. No amount? It assumes 1 normal serving and tells you.</div></li>
           <li><b class="n">3</b><div><b>Add to your day</b> for a running total. Made your own sauce? Type its ingredients and tap <b>Save as recipe</b>.</div></li>
         </ol>
-        <p class="muted small" style="margin:14px 0 0">Weights are <b>cooked, as eaten</b> unless you pick raw. Calculations use only USDA, FNRI and label values (${verified} foods). Estimates sit separately in Suggestions.</p>
+        <p class="muted small" style="margin:14px 0 0">Weights are <b>cooked, as eaten</b> unless you pick raw. Calculations use only USDA, FNRI and label values (${verified} foods). Recipe estimates are marked <b>Estimate</b> and are only used when you pick one.</p>
         <h3 class="section-title">Browse foods</h3>
-        <ul class="legend-list">          <li><b>Database:</b> verified values (USDA, FNRI, labels), plus your own foods and recipes. Typing matches against these.</li>
-          <li><b>Suggestions:</b> recipe-based estimates with no official lab value. They’re never used on their own; tap one to use it on purpose.</li>
-          <li><b>My Eats:</b> everything you’ve logged, most recent first. Tap one to log the same amount again.</li>
-          <li>Tap a category name to open or close it. Tap <b>Protein</b>, <b>Carbs</b>, <b>Fat</b> or <b>Fiber</b> to see the best sources of each.</li></ul>`,
+        <ul class="legend-list"><li>Tap a category to open it, or <b>Protein</b>, <b>Carbs</b>, <b>Fat</b> or <b>Fiber</b> to see the best sources first.</li>
+          <li>Foods marked <b>Estimate</b> are recipe estimates with no lab value. Typing never picks them on its own; tap one to use it on purpose.</li>
+          <li>Tap a food to see its details, where it comes from (USDA, FNRI or a label), and to add it.</li></ul>`,
     }[page];
     openSheet(`${sheetHead('Reminder')}${body}`);
   }
@@ -160,6 +164,7 @@ window.MacrosApp = { start(ctx) {
     if (!TABS.includes(tab)) tab = 'day';
     TABS.forEach(t => { $('#view-' + t).hidden = t !== tab; });
     const navTab = ['goals', 'progress', 'tutorial', 'settings'].includes(tab) ? 'menu' : tab;
+    $('#todayPill').style.visibility = tab === 'day' ? 'hidden' : '';
     $$('.tabbar a').forEach(a => a.classList.toggle('on', a.dataset.tab === navTab));
     if (tab === 'day') { viewIdx = days.length - 1; showDash(dashPage); }
     if (tab === 'add') { renderFoods(); renderWater(); }
@@ -212,6 +217,9 @@ window.MacrosApp = { start(ctx) {
     if (foods.length) html += `<div class="card total" id="totalCard">${totalInner()}</div>`;
     html += `<h3 class="section-title">${items.length > 1 ? 'Breakdown' : 'Match'} — check these</h3>`;
     html += items.map(itemCard).join('');
+    const last = items[items.length - 1]; const shown = new Set(items.filter(i => i.food).map(i => i.food.id));
+    const more = last && last.query ? E.search(last.query, { prefix: true, limit: 12, scope: 'all' }).map(r => r.food).filter(f => !shown.has(f.id)).slice(0, 6) : [];
+    if (more.length) html += `<h3 class="section-title">More foods like “${esc(last.query)}”</h3><div class="food-list" id="moreFoods">${more.map(foodRow).join('')}</div>`;
     box.innerHTML = html;
   }
   const currentTotal = () => E.sumMacros(items.filter(i => i.kind === 'food').map(i => E.macros(i.food, i.grams)));
@@ -220,11 +228,11 @@ window.MacrosApp = { start(ctx) {
     const est = items.some(i => i.kind === 'food' && i.food.sugg);
     return `<div class="total-top">
         <div><div class="eyebrow">Total · ${n} food${n === 1 ? '' : 's'}</div><div class="kcal-big">${k0(m.kcal)}<span>kcal</span></div></div>
-        <button class="btn ghost small" type="button" data-act="recipe" title="Save these ingredients as one food, e.g. your own sauce">Save as recipe</button>
+        <button class="icon-btn more-btn" type="button" data-act="more" aria-label="More options">&#8943;</button>
       </div>
       ${macroTiles(m, true)}
       ${splitBar(m)}
-      ${est ? '<div class="note">Includes an estimate from Suggestions, so this total is approximate.</div>' : ''}
+      ${est ? '<div class="note">Includes a recipe estimate, so this total is approximate.</div>' : ''}
       <div class="add-row">${mealSelect('mealSel', parsedMeal || defaultMeal())}<button class="btn grow" type="button" data-act="add">Add to Day ${curDay().n}</button></div>`;
   }
   const itemMacrosHtml = m => mchips(m, true);
@@ -250,9 +258,9 @@ window.MacrosApp = { start(ctx) {
       const sug = it.fromSugg || [];
       return `<div class="card item unknown" data-i="${i}">
         <div class="item-head"><div><div class="item-name">“${esc(it.query)}” isn't in the calculator</div>
-          <div class="muted small">${sug.length ? 'There is an estimate in Suggestions. Tap it to use it on purpose.' : 'Not in the database yet.'}</div></div>
+          <div class="muted small">${sug.length ? 'There’s a recipe estimate for it. Tap it to use it on purpose.' : 'Not in the database yet.'}</div></div>
           <button class="remove" type="button" data-act="remove" aria-label="Remove">&times;</button></div>
-        ${sug.length ? `<div class="suggest"><span class="muted">Suggestions</span>${sug.map(f => `<button class="chip est" type="button" data-act="pick" data-id="${esc(f.id)}">${esc(f.name)} · estimate</button>`).join('')}</div>` : ''}
+        ${sug.length ? `<div class="suggest"><span class="muted">Estimates</span>${sug.map(f => `<button class="chip est" type="button" data-act="pick" data-id="${esc(f.id)}">${esc(f.name)} · estimate</button>`).join('')}</div>` : ''}
         ${it.suggestions.length ? `<div class="suggest"><span class="muted">Did you mean</span>${it.suggestions.map(f => `<button class="chip" type="button" data-act="pick" data-id="${esc(f.id)}">${esc(f.name)}</button>`).join('')}</div>` : ''}
         <div class="row-actions"><button class="btn small outline" type="button" data-act="custom">+ Add “${esc(it.query)}” as my food</button></div>
       </div>`;
@@ -261,11 +269,11 @@ window.MacrosApp = { start(ctx) {
     const notes = [];
     if (it.note === 'default') notes.push(`No amount given, so it assumed ${E.amountText(it.food, it.qty, it.unit)}. Change it above.`);
     if (it.note === 'approx') notes.push(`There's no standard “${E.unitLabel(it.unit, 1)}” size for this food, so this is estimated. Switch to grams for accuracy.`);
-    if (it.food.sugg && !it.parent) notes.push('Estimate from Suggestions (no lab value). It can be off by ±15–20%.');
+    if (it.food.sugg && !it.parent) notes.push('Recipe estimate (no lab value). It can be off by ±15–20%.');
     const alts = it.alts && it.alts.length ? `<select class="select alt" aria-label="Pick a different food"><option value="">Not it? Pick another…</option>${it.alts.map(f => `<option value="${esc(f.id)}">${esc(f.name)}</option>`).join('')}<option value="__search">Search all foods…</option></select>` : `<button class="linkish small-link" type="button" data-act="find">Not it? Search all foods</button>`;
     return `<div class="card item" data-i="${i}">
       <div class="item-head">
-        <div class="item-name">${esc(it.food.name)} ${badge(it.food)}${it.parent ? `<span class="parent-tag">${esc(it.parent)}</span>` : ''}</div>
+        <div class="item-name">${esc(it.food.name)} ${tag(it.food)}${it.parent ? `<span class="parent-tag">${esc(it.parent)}</span>` : ''}</div>
         <div style="display:flex;gap:6px;align-items:flex-start"><div class="item-kcal" data-k="kcal">${k0(m.kcal)} <small>kcal</small></div>
         <button class="remove" type="button" data-act="remove" aria-label="Remove ${esc(it.food.name)}">&times;</button></div>
       </div>
@@ -316,11 +324,15 @@ window.MacrosApp = { start(ctx) {
     }
   });
   $('#results').addEventListener('click', e => {
+    const fr = e.target.closest('#moreFoods [data-id]'); if (fr) return openFood(fr.dataset.id);
     const b = e.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act;
-    if (act === 'recent') { const f = E.byId(b.dataset.id); if (f) appendQuery(`${defaultAmountText(f)} ${f.key}`); return; }
+    if (act === 'recent') { const f = E.byId(b.dataset.id); if (f) appendQuery(`${b.dataset.g ? b.dataset.g + 'g' : defaultAmountText(f)} ${f.key}`); return; }
     if (act === 'add') return addCurrent();
     if (act === 'recipe') return openRecipeForm();
+    if (act === 'more') return openSheet(`${sheetHead('More options')}
+      <div class="action-list"><button type="button" class="action-row" id="moreRecipe"><b>Save as my recipe</b><span>Turn these ingredients into one food, like your own sauce</span></button>
+        <button type="button" class="action-row" id="moreClear"><b>Clear the list</b><span>Start over</span></button></div>`) && bindMoreAdd();
     const card = b.closest('[data-i]'); const i = card ? +card.dataset.i : -1; const it = items[i];
     if (act === 'remove') { items.splice(i, 1); if (!items.length) { q.value = ''; autosize(); } renderResults(); }
     if (act === 'state') {
@@ -345,10 +357,15 @@ window.MacrosApp = { start(ctx) {
     if (act === 'find') openPicker(i);
   });
 
+  function bindMoreAdd() {
+    $('#moreRecipe').onclick = () => { closeSheet(); openRecipeForm(); };
+    $('#moreClear').onclick = () => { closeSheet(); q.value = ''; autosize(); identify(); };
+  }
   function emptyState() {
-    const rec = recent.map(id => E.byId(id)).filter(Boolean).slice(0, 8);
+    const seen = new Set();
+    const rec = myEats().filter(x => E.byId(x.last.fid) && !seen.has(x.last.fid) && seen.add(x.last.fid)).slice(0, 10);
     return `<div class="empty">
-      ${rec.length ? `<h3 class="section-title">Recent — tap to add</h3><div class="chips">${rec.map(f => `<button class="chip" type="button" data-act="recent" data-id="${esc(f.id)}">${esc(f.name)}</button>`).join('')}</div>`
+      ${rec.length ? `<h3 class="section-title">Recent — tap to add the same amount</h3><div class="chips">${rec.map(x => `<button class="chip" type="button" data-act="recent" data-id="${esc(x.last.fid)}" data-g="${Math.round(x.last.grams)}">${esc(x.last.name)} <span class="muted">· ${fmt(x.last.grams, 0)} g</span></button>`).join('')}</div>`
         : '<p class="muted" style="margin:18px 4px">Foods you add will show up here so you can tap them next time.</p>'}
     </div>`;
   }
@@ -357,7 +374,7 @@ window.MacrosApp = { start(ctx) {
     const foods = items.filter(i => i.kind === 'food');
     if (!foods.length) return toast('Nothing to add yet.');
     const meal = $('#mealSel') ? $('#mealSel').value : defaultMeal();
-    const { added, kc, day } = logToDay(foods, meal);
+    const { added, kc, day } = logToDay(foods, meal); pendingMeal = null;
     const backup = q.value;
     q.value = ''; autosize(); identify();
     toast(`Added ${foods.length} to Day ${day.n} · ${meal} · ${k0(kc)} kcal`, { label: 'Undo', run: () => { undoLog(day, added); setQuery(backup); } });
@@ -409,7 +426,7 @@ window.MacrosApp = { start(ctx) {
   function renderDay() {
     const day = days[viewIdx]; const isCur = viewIdx === days.length - 1;
     $('#dayTitle').textContent = `Day ${day.n}`;
-    $('#daySub').textContent = isCur ? 'Current day' : `${when(day.start)} – ${when(days[viewIdx + 1].start)}`;
+    $('#daySub').textContent = isCur ? `Current day · ${shortDate(day.start)}` : `${when(day.start)} – ${when(days[viewIdx + 1].start)}`;
     $('#dayPrev').disabled = viewIdx === 0; $('#dayNext').disabled = isCur;
     const entries = day.entries;
     const tot = E.sumMacros(entries); const T = settings.targets;
@@ -421,23 +438,26 @@ window.MacrosApp = { start(ctx) {
           <div class="bar"><span class="dot-${x.cls}" style="width:${pct}%"></span></div></div>`;
       }).join('')}
     </div></div>
-    <p class="muted small" style="margin:12px 0 0">${entries.length ? (left >= 0 ? `<b>${k0(left)} kcal</b> left to reach your target.` : `<b>${k0(-left)} kcal</b> over your target.`) + ` Protein to go: <b>${fmt(Math.max(T.p - tot.p, 0), 0)} g</b>.` : `Target: ${k0(T.kcal)} kcal · ${fmt(T.p, 0)} g protein${activePhase() ? ` (${esc(activePhase().name)})` : ''}. Change it in Menu → Goals.`}</p></div>`;
-    if (isCur) { const wc = waterCfg(); html = html.replace('</p></div>', `</p><a class="water-line" href="#add">Water: <b>${day.water || 0} of ${wc.goal}</b> glasses · tap to add</a></div>`); }
+    <p class="muted small" style="margin:12px 0 0">${entries.length ? (left >= 0 ? `<b>${k0(left)} kcal</b> left to reach your target.` : `<b>${k0(-left)} kcal</b> over your target.`) + ` Protein to go: <b>${fmt(Math.max(T.p - tot.p, 0), 0)} g</b>.` : `Target: ${k0(T.kcal)} kcal · ${fmt(T.p, 0)} g protein${activePhase() ? ` (${esc(activePhase().name)})` : ''}.`}</p></div>`;
+    if (isCur) html += '<div class="water" id="waterDash" style="margin-top:12px"></div>';
+    // Manual days: if the day began on an earlier date, offer to start the next one (never automatic)
+    const stale = isCur && entries.length && dayStart(day.start) < dayStart(Date.now()) && new Date().getHours() >= 4 && settings.nudgeSkip !== day.id;
+    if (stale) html = `<div class="card nudge-card"><div><b>New day?</b><span>Day ${day.n} started ${shortDate(day.start)}. Start Day ${day.n + 1} when you’re ready.</span></div>
+      <div class="row-actions" style="margin-top:10px"><button class="btn small" type="button" data-act="newday">Start Day ${day.n + 1}</button><button class="btn ghost small" type="button" data-act="nudgeskip">Not yet</button></div></div>` + html;
     if (isCur && settings.setupDone && !(settings.tour && settings.tour.hide)) html = `<div class="card tour-card"><div><b>New here?</b><span>Take the 2-minute tour of everything maCros can do.</span></div>
       <div class="row-actions" style="margin-top:10px"><button class="btn small" type="button" data-act="tour">Start the tour</button><button class="btn ghost small" type="button" data-act="tourhide">Not now</button></div></div>` + html;
     if (isCur && weighDue().due) html = `<a class="due-banner" href="#progress"><span><b>Weigh-in time</b> · log your weight to keep your estimate on track</span><span aria-hidden="true">&#8250;</span></a>` + html;
 
     const notes = day.notes || {};
-    if (!entries.length) {
-      html += `<div class="card" style="text-align:center;margin-top:12px"><p style="margin:4px 0 12px">Nothing logged on Day ${day.n} yet.</p>
-        ${isCur ? '<a class="btn" href="#add">Add food</a>' : ''}</div>`;
-    }
+    if (!entries.length && !isCur) html += `<div class="card" style="text-align:center;margin-top:12px"><p style="margin:4px 0">Nothing logged on Day ${day.n}.</p></div>`;
     {
       for (const meal of MEALS) {
-        const list = entries.filter(e => e.meal === meal); if (!list.length && !notes[meal]) continue;
+        const list = entries.filter(e => e.meal === meal); if (!list.length && !notes[meal] && !isCur) continue;
         const mt = E.sumMacros(list);
         html += `<div class="meal-head"><h2>${meal}</h2><span>${list.length ? `${k0(mt.kcal)} kcal · P ${fmt(mt.p, 0)} · C ${fmt(mt.c, 0)} · F ${fmt(mt.f, 0)}` : ''}</span>
-            <button class="note-btn${notes[meal] ? ' has' : ''}" type="button" data-act="note" data-meal="${meal}" aria-label="${notes[meal] ? 'View' : 'Add'} ${meal.toLowerCase()} note">${NOTE_ICON}</button></div>
+            <button class="note-btn${notes[meal] ? ' has' : ''}" type="button" data-act="note" data-meal="${meal}" aria-label="${notes[meal] ? 'View' : 'Add'} ${meal.toLowerCase()} note">${NOTE_ICON}</button>
+            ${isCur ? `<button class="note-btn add" type="button" data-act="addmeal" data-meal="${meal}" aria-label="Add food to ${meal.toLowerCase()}">+</button>` : ''}</div>
+          ${!list.length && isCur ? `<button class="meal-empty" type="button" data-act="addmeal" data-meal="${meal}">+ Add ${meal.toLowerCase()}</button>` : ''}
           ${notes[meal] ? `<button class="meal-note" type="button" data-act="note" data-meal="${meal}">${esc(notes[meal])}</button>` : ''}
           ${list.length ? `<div class="card">${list.map(e => `<div class="entry" data-id="${esc(e.id)}">
             <div class="e-main"><div class="e-name">${esc(e.name)}${e.est ? ' <span class="badge E">Estimate</span>' : ''}</div><div class="e-sub">${esc(e.amt)}</div>${mchips(e, false)}</div>
@@ -447,9 +467,10 @@ window.MacrosApp = { start(ctx) {
     }
     html += `<div class="today-actions">
       ${isCur ? `<button class="btn outline grow" type="button" data-act="newday">Start Day ${day.n + 1}</button>` : `<button class="btn ghost small" type="button" data-act="gocur">Go to current day (Day ${curDay().n})</button>`}
-      ${entries.length ? '<button class="btn ghost small" type="button" data-act="copy">Copy day summary</button>' : ''}</div>
+      ${entries.length ? '<button class="icon-btn more-btn" type="button" data-act="daymore" aria-label="More options">&#8943;</button>' : ''}</div>
       ${reminderBtn('day')}`;
     $('#dayBody').innerHTML = html;
+    if (isCur) renderWater($('#waterDash'));
   }
   $('#dayBody').addEventListener('click', e => {
     const b = e.target.closest('[data-act]'); if (!b) return;
@@ -471,7 +492,15 @@ window.MacrosApp = { start(ctx) {
     if (b.dataset.act === 'note') openNote(day, b.dataset.meal);
     if (b.dataset.act === 'tour') openTour(0);
     if (b.dataset.act === 'tourhide') { settings.tour = Object.assign({}, settings.tour, { hide: true }); saveSettings(); renderDay(); toast('You can find the tour in Menu → Tutorial'); }
-    if (b.dataset.act === 'copy') {
+    if (b.dataset.act === 'addmeal') { pendingMeal = b.dataset.meal; location.hash = '#add'; setTimeout(() => q.focus(), 60); }
+    if (b.dataset.act === 'nudgeskip') { settings.nudgeSkip = day.id; saveSettings(); renderDay(); }
+    if (b.dataset.act === 'daymore') {
+      openSheet(`${sheetHead('More options', `Day ${day.n}`)}<div class="action-list"><button type="button" class="action-row" id="copyDayBtn"><b>Copy day summary</b><span>Paste it into a chat or your notes</span></button></div>`);
+      $('#copyDayBtn').onclick = () => { closeSheet(); copyDay(day); };
+    }
+  });
+  function copyDay(day) {
+    {
       const t = E.sumMacros(day.entries);
       const lines = [`Day ${day.n} (${when(day.start)}): ${k0(t.kcal)} kcal · P ${fmt(t.p, 0)}g · C ${fmt(t.c, 0)}g · F ${fmt(t.f, 0)}g · Fiber ${fmt(t.fib, 0)}g`];
       for (const meal of MEALS) {
@@ -481,7 +510,7 @@ window.MacrosApp = { start(ctx) {
       }
       copyText(lines.join('\n'));
     }
-  });
+  }
   // Meal notes: how a meal went, what you felt, where you ate
   const NOTE_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M6 3h9l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm8 1.5V9h4.5L14 4.5ZM8 12a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2H8Zm0 4a1 1 0 1 0 0 2h5a1 1 0 1 0 0-2H8Z"/></svg>';
   function openNote(day, meal) {
@@ -509,16 +538,13 @@ window.MacrosApp = { start(ctx) {
   const CATS = ['All', 'My Recipes', 'My Foods', 'Silog Meals', 'Filipino Dishes', 'Rice & Grains', 'Bread & Bakery', 'Noodles & Pasta', 'Chicken', 'Pork', 'Beef', 'Fish & Seafood',
     'Eggs & Tofu', 'Soups', 'Vegetables', 'Root Crops & Beans', 'Fruits', 'Nuts & Spreads', 'Dairy', 'Drinks', 'Snacks & Street Food',
     'Desserts & Kakanin', 'Fast Food', 'Condiments & Fats', 'Supplements'];
-  const MODES = { db: 'Database', sugg: 'Suggestions', eats: 'My Eats' };
-  let foodSrc = 'all', foodMode = 'db', foodT;
+  let foodSrc = 'all';
   // "Sources": foods where that macro carries most of the calories (fiber: at least 3 g per 100 g)
   const SRC = [['all', 'All'], ['p', 'Protein'], ['c', 'Carbs'], ['f', 'Fat'], ['fib', 'Fiber']];
   const isSource = (f, k) => !f.parts && f.kcal > 0 && (k === 'p' ? f.p * 4 / f.kcal >= 0.35 && f.p >= 8
     : k === 'c' ? f.c * 4 / f.kcal >= 0.6 && f.c >= 15 : k === 'f' ? f.f * 9 / f.kcal >= 0.6 && f.f >= 10 : f.fib >= 3);
   const openCats = new Set();   // categories opened in the "All" list (all start closed)
-  $('#foodSearch').addEventListener('input', () => { clearTimeout(foodT); foodT = setTimeout(renderFoodList, 120); });
   $('#cats').addEventListener('click', e => { const b = e.target.closest('[data-src]'); if (!b) return; foodSrc = b.dataset.src; renderFoods(); });
-  $('#foodModes').addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (!b) return; foodMode = b.dataset.mode; foodSrc = 'all'; renderFoods(); });
   $('#addCustomBtn').addEventListener('click', () => openCustomForm({}));
   $('#foodList').addEventListener('click', e => {
     const h = e.target.closest('[data-toggle-cat]');
@@ -528,16 +554,11 @@ window.MacrosApp = { start(ctx) {
       h.setAttribute('aria-expanded', open); h.nextElementSibling.hidden = !open;
       return;
     }
-    const b = e.target.closest('[data-id],[data-eat]'); if (!b) return;
-    if (b.dataset.eat) openEat(b.dataset.eat); else openFood(b.dataset.id);
+    const b = e.target.closest('[data-id]'); if (b) openFood(b.dataset.id);
   });
-  const inMode = f => (foodMode === 'sugg' ? f.sugg : !f.sugg);
 
   function renderFoods() {
-    $('#foodModes').innerHTML = Object.entries(MODES).map(([k, l]) => `<button type="button" role="tab" aria-selected="${k === foodMode}" class="${k === foodMode ? 'on' : ''}" data-mode="${k}">${l}</button>`).join('');
-    $('#cats').hidden = foodMode === 'eats';
     $('#cats').innerHTML = SRC.map(([k, l]) => `<button class="chip src-${k}${k === foodSrc ? ' on' : ''}" type="button" role="tab" aria-selected="${k === foodSrc}" data-src="${k}">${l}</button>`).join('');
-    $('#foodSearch').placeholder = foodMode === 'eats' ? 'Search what you’ve eaten…' : foodMode === 'sugg' ? 'Search estimates (adobo, sinigang…)' : 'Search the list (chicken, kanin, whey…)';
     $('#foodsFoot').innerHTML = reminderBtn('add');
     renderFoodList();
   }
@@ -545,7 +566,7 @@ window.MacrosApp = { start(ctx) {
     const def = f.parts ? { qty: 1, unit: 'plate', grams: f.comboGrams } : E.amount(f, null, null);
     const m = E.macros(f, def.grams);
     const per = f.parts ? `${f.parts.length} parts · per plate` : `per 100 g · ${k0(f.kcal)} kcal`;
-    return `<button class="food-row" type="button" data-id="${esc(f.id)}"><div class="fr-main"><div class="fr-name">${esc(f.name)} ${badge(f)}</div><div class="fr-sub">${per}</div>${mchips(f.parts ? m : f, false)}</div>
+    return `<button class="food-row" type="button" data-id="${esc(f.id)}"><div class="fr-main"><div class="fr-name">${esc(f.name)} ${tag(f)}</div><div class="fr-sub">${per}</div>${mchips(f.parts ? m : f, false)}</div>
       <div class="fr-kcal">${k0(m.kcal)}<small>${f.parts ? '1 plate' : esc(E.amountText(f, def.qty, def.unit))}</small></div></button>`;
   }
   // My Eats: every distinct food + amount you've logged, newest first
@@ -559,30 +580,13 @@ window.MacrosApp = { start(ctx) {
     return [...map.values()].sort((a, b) => b.last.t - a.last.t);
   }
   function renderFoodList() {
-    const term = $('#foodSearch').value.trim();
     const list = $('#foodList');
-    if (foodMode === 'eats') {
-      let eats = myEats();
-      if (term) { const t = term.toLowerCase(); eats = eats.filter(x => x.last.name.toLowerCase().includes(t)); }
-      $('#foodCount').textContent = eats.length ? `${eats.length} item${eats.length === 1 ? '' : 's'}` : '';
-      list.innerHTML = eats.length ? eats.map(x => `<button class="food-row" type="button" data-eat="${esc(x.key)}"><div class="fr-main"><div class="fr-name">${esc(x.last.name)}${x.last.est ? ' <span class="badge E">Estimate</span>' : ''}</div>
-          <div class="fr-sub">${esc(x.last.amt)} · eaten ${x.count}× · last ${esc(when(x.last.t))}</div></div><div class="fr-kcal">${k0(x.last.kcal)}<small>P ${fmt(x.last.p, 0)} g</small></div></button>`).join('')
-        : `<div style="padding:18px;text-align:center"><p class="muted" style="margin:0">${term ? 'Nothing you’ve logged matches that.' : 'Foods you add to your day will show up here.'}</p></div>`;
-      return;
-    }
-    let foods;
-    if (term) foods = E.search(term, { prefix: true, limit: 60, scope: foodMode === 'sugg' ? 'sugg' : 'calc' }).map(r => r.food);
-    else foods = E.all().filter(inMode);
+    let foods = E.all();
     const srcLabel = foodSrc === 'all' ? '' : SRC.find(x => x[0] === foodSrc)[1].toLowerCase();
     if (foodSrc !== 'all') foods = foods.filter(f => isSource(f, foodSrc)).sort((a, b) => b[foodSrc] - a[foodSrc]);
-    $('#foodCount').textContent = (term ? `${foods.length} match${foods.length === 1 ? '' : 'es'} for “${term}”` : `${foods.length} foods`)
-      + (srcLabel ? ` · best ${srcLabel} sources first (per 100 g)` : '');
-    if (!foods.length) {
-      list.innerHTML = `<div style="padding:18px;text-align:center"><p style="margin:0 0 12px">No food matches${term ? ` “${esc(term)}”` : ''}.</p><button class="btn small" type="button" id="addFromSearch">+ Add it as my food</button></div>`;
-      $('#addFromSearch').onclick = () => openCustomForm({ name: term });
-      return;
-    }
-    if (!term && foodSrc === 'all') {
+    $('#foodCount').textContent = srcLabel ? `Best ${srcLabel} sources first (per 100 g)` : '';
+    $('#foodCount').hidden = !srcLabel;
+    if (foodSrc === 'all') {
       const groups = {}; foods.forEach(f => (groups[f.cat] = groups[f.cat] || []).push(f));
       list.innerHTML = CATS.filter(c => groups[c]).map(c => `<button class="cat-head" type="button" data-toggle-cat="${esc(c)}" aria-expanded="${openCats.has(c)}">
           <span>${esc(c)}</span><span class="cat-count">${groups[c].length}<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M6.3 9.3a1 1 0 0 1 1.4 0L12 13.6l4.3-4.3a1 1 0 1 1 1.4 1.4l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 0 1 0-1.4Z"/></svg></span></button>
@@ -620,7 +624,7 @@ window.MacrosApp = { start(ctx) {
         <tr><td>Carbs (total)</td><td>${fmt(f.c)} g</td></tr><tr><td>Fat</td><td>${fmt(f.f)} g</td></tr><tr><td>Fiber</td><td>${fmt(f.fib)} g</td></tr></table>
       ${recipe}
       <div class="add-row">${mealSelect('fdMeal', defaultMeal())}<button class="btn grow" type="button" id="fdAdd">Add to Day ${curDay().n}</button></div>
-      <div class="row-actions"><button class="btn ghost small" type="button" id="fdUse">Add to Identify list</button>
+      <div class="row-actions"><button class="btn ghost small" type="button" id="fdUse">Add to my list</button>
         ${f.custom ? `<button class="btn ghost small" type="button" id="fdEdit">Edit</button><button class="btn danger small" type="button" id="fdDel">Delete</button>` : ''}</div>`);
     const calc = () => {
       const qty = parseFloat($('#fdQty').value) || 0; const unit = $('#fdUnit').value;
@@ -662,10 +666,10 @@ window.MacrosApp = { start(ctx) {
       <div class="eyebrow" style="margin-top:16px">What's on 1 plate</div>
       <ul class="parts combo-parts" id="cbParts"></ul>
       <div class="add-row">${mealSelect('cbMeal', defaultMeal())}<button class="btn grow" type="button" id="cbAdd">Add to Day ${curDay().n}</button></div>
-      <div class="row-actions"><button class="btn ghost small" type="button" id="cbUse">Open in Identify</button></div>`);
+      <div class="row-actions"><button class="btn ghost small" type="button" id="cbUse">Add to my list to adjust</button></div>`);
     const plates = () => { const v = parseFloat($('#cbQty').value) || 0; return mode === 'g' ? (plateG() ? v / plateG() : 0) : v; };
     const renderParts = () => {
-      $('#cbParts').innerHTML = parts.map((pt, i) => `<li data-pi="${i}"><div class="cp-name">${esc(pt.food.name)} ${badge(pt.food)}<small class="muted">${k0(E.macros(pt.food, pt.grams).kcal)} kcal${pcs(pt)}</small></div>
+      $('#cbParts').innerHTML = parts.map((pt, i) => `<li data-pi="${i}"><div class="cp-name">${esc(pt.food.name)} ${tag(pt.food)}<small class="muted">${k0(E.macros(pt.food, pt.grams).kcal)} kcal${pcs(pt)}</small></div>
         <div class="cp-amt"><input class="input" type="number" inputmode="decimal" min="0" step="any" value="${Math.round(pt.grams)}" aria-label="Grams of ${esc(pt.food.name)}" data-pg><span class="muted">g</span>
           <button class="btn ghost small" type="button" data-extra title="Add ${fmt(extra(pt).g, 0)} g more ${esc(pt.food.name)}">${esc(extra(pt).label)}</button></div></li>`).join('');
     };
@@ -699,23 +703,6 @@ window.MacrosApp = { start(ctx) {
     };
     $('#cbUse').onclick = () => { const n = calc(); closeSheet(); location.hash = '#add'; items = asItems(n); q.value = `${fmt(n, 2)} ${f.key}`; autosize(); renderResults(); };
   }
-  function openEat(key) {
-    const x = myEats().find(e => e.key === key); if (!x) return;
-    const e = x.last; const f = E.byId(e.fid);
-    openSheet(`${sheetHead(esc(e.name), `${esc(e.amt)} · eaten ${x.count}× · last ${esc(when(e.t))}`)}
-      <div class="kcal-big">${k0(e.kcal)}<span>kcal</span></div>${macroTiles(e, false)}
-      ${f ? '' : '<div class="note">This food is no longer in the database (it may have been a deleted custom food). Logging again reuses the saved numbers.</div>'}
-      <div class="add-row">${mealSelect('eatMeal', defaultMeal())}<button class="btn grow" type="button" id="eatAdd">Log again to Day ${curDay().n}</button></div>
-      ${f ? '<div class="row-actions"><button class="btn ghost small" type="button" id="eatUse">Add to Identify list (to change the amount)</button></div>' : ''}`);
-    $('#eatAdd').onclick = () => {
-      const meal = $('#eatMeal').value; const day = curDay();
-      const copy = { ...e, id: uid(), meal, t: Date.now() };
-      day.entries.push(copy); settings.lastMeal = meal; saveSettings(); saveDays(); updatePill(); closeSheet();
-      toast(`Logged ${e.name} to Day ${day.n} · ${k0(e.kcal)} kcal`, { label: 'Undo', run: () => undoLog(day, [copy.id]) });
-    };
-    if (f) $('#eatUse').onclick = () => { closeSheet(); location.hash = '#add'; appendQuery(`${fmt(e.grams, 0)}g ${f.key}`); };
-  }
-
   // Swap one matched item for any food, keeping its weight
   function openPicker(i) {
     const it = items[i]; if (!it) return;
@@ -851,7 +838,7 @@ window.MacrosApp = { start(ctx) {
           <li><span class="badge U">USDA</span> USDA FoodData Central lab values.</li>
           <li><span class="badge F">FNRI</span> FNRI Philippine Food Composition Tables (PhilFCT), measured from Philippine foods.</li>
           <li><span class="badge L">Label</span> Manufacturer label (USDA Branded Foods). Check your exact pack.</li>
-          <li><span class="badge E">Estimate</span> Recipe estimates with no lab value. These live only in <b>Suggestions</b> and are used only when you pick one.</li>
+          <li><span class="badge E">Estimate</span> Recipe estimates with no lab value. Typing never picks them on its own; they’re used only when you choose one.</li>
           <li><span class="badge R">My recipe</span> <span class="badge C">My food</span> Things you saved yourself.</li>
           <li>All weights are <b>cooked, as eaten</b> unless the name says raw, dry or uncooked. Carbs are total carbs, which include fiber.</li>
         </ul>
@@ -1027,7 +1014,8 @@ window.MacrosApp = { start(ctx) {
     $('#goalsBody').innerHTML = `
       <div class="card settings-card"><h2>Current goal</h2>
         <p class="muted small" style="margin:0">${prof ? esc(S.summary({ ...prof, kg: currentKg() })) : 'Not set up yet.'}</p>
-        <div class="row-actions"><button class="btn small outline" type="button" id="redoSetupBtn">Redo setup</button></div></div>
+        <div class="row-actions"><button class="btn small" type="button" id="statsBtn">Update my stats</button><button class="btn small outline" type="button" id="redoSetupBtn">Change my goal</button></div>
+        <p class="muted small" style="margin:10px 0 0">Update your stats when your weight or activity changes. Change your goal to answer the setup questions again.</p></div>
       <div class="card settings-card"><div class="card-head"><h2>Phases</h2><button class="btn small ghost" type="button" id="addPhaseBtn">+ Add phase</button></div>
         <div class="phase-list">${settings.phases.map(p => `<div class="phase-row${p.id === settings.phaseId ? ' on' : ''}">
             <button type="button" class="phase-main" data-phase="${p.id}" aria-pressed="${p.id === settings.phaseId}"><span class="radio" aria-hidden="true"></span>
@@ -1041,6 +1029,7 @@ window.MacrosApp = { start(ctx) {
         <p class="muted small" id="tgtNote" style="margin:12px 0 0"></p></div>`;
     tgtNote();
     $('#redoSetupBtn').onclick = () => openSetup(true);
+    $('#statsBtn').onclick = openStats;
     $('#addPhaseBtn').onclick = () => openPhaseForm(null);
     $('#autoBtn').onclick = () => {
       settings.locks = {}; rebalance('kcal'); syncPhase(); saveSettings(); updatePill(); renderGoals();
@@ -1065,6 +1054,35 @@ window.MacrosApp = { start(ctx) {
     const T = settings.targets; const sum = T.p * 4 + T.c * 4 + T.f * 9; const off = Math.abs(sum - T.kcal) > 25;
     $('#tgtNote').innerHTML = `Change calories and the unlocked macros follow. A macro you type gets locked ${LOCK}; tap the lock to free it.
       Protein × 4 + Carbs × 4 + Fat × 9 = <b${off ? ' style="color:var(--danger)"' : ''}>${k0(sum)}</b> kcal${off ? ' (doesn’t match your calories; unlock a macro or tap Auto-calculate)' : ''}.`;
+  }
+
+  // Quick update of weight / age / activity; recalculates the current phase's targets
+  function openStats() {
+    const p = settings.profile; if (!p) return openSetup(true);
+    const ACT = [['sed', 'Mostly sitting'], ['light', 'Lightly active (1–3 days a week)'], ['mod', 'Moderately active (3–5 days)'], ['very', 'Very active (6–7 days)'], ['extra', 'Extremely active (physical job + training)']];
+    openSheet(`${sheetHead('Update my stats', 'Your targets are recalculated for your current phase.')}
+      <div class="form-grid">
+        <label class="field">Weight (${wUnit()})<input class="input" id="stKg" type="number" inputmode="decimal" step="0.1" value="${wShow(currentKg()).split(' ')[0]}"></label>
+        <label class="field">Age<input class="input" id="stAge" type="number" inputmode="numeric" min="18" max="100" value="${p.age}"></label>
+      </div>
+      <label class="field" style="margin-top:12px">How active are you?<select class="select" id="stAct">${ACT.map(([k, l]) => `<option value="${k}"${k === p.activity ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+      <p class="muted small" id="stMsg" role="alert" style="min-height:1.2em"></p>
+      <div class="add-row"><button class="btn grow" type="button" id="stSave">Save and update targets</button></div>`);
+    $('#stSave').onclick = () => {
+      const v = parseFloat($('#stKg').value), age = Math.round(parseFloat($('#stAge').value));
+      const kg = wUnit() === 'lb' ? v * LB : v;
+      if (!(kg >= 30 && kg <= 300)) return ($('#stMsg').textContent = 'Check your weight.');
+      if (!(age >= 18 && age <= 100)) return ($('#stMsg').textContent = 'Enter an age from 18 to 100.');
+      p.age = age; p.activity = $('#stAct').value;
+      if (Math.abs(kg - currentKg()) >= 0.05) {
+        settings.weighIns = (settings.weighIns || []).filter(x => dayStart(x.t) !== dayStart(Date.now())).concat({ t: Date.now(), kg: Math.round(kg * 10) / 10 });
+        p.kg = Math.round(kg * 10) / 10;
+      }
+      const ph = activePhase();
+      if (ph && phaseType(ph.type).goal) { settings.targets = phaseTargets(ph.type); settings.locks = {}; syncPhase(); }
+      saveSettings(); updatePill(); closeSheet(); renderGoals();
+      toast(`Updated: ${k0(settings.targets.kcal)} kcal · ${settings.targets.p} g protein`);
+    };
   }
 
   function openPhaseForm(ph) {
@@ -1195,20 +1213,17 @@ window.MacrosApp = { start(ctx) {
           <div><small>Avg protein</small><b>${fmt(st.avgP, 0)} g</b><span>of ${fmt(T.p, 0)} g target</span></div>
           <div><small>Calories on target</small><b>${st.onTarget} of ${st.count}</b><span>days within 10%</span></div>
           <div><small>Protein hit</small><b>${st.protHit} of ${st.count}</b><span>days at 90%+</span></div></div>`
-        : `<p class="muted small" style="margin:0">${days.some(d => d.entries.length) ? 'Averages show once you finish a day (Start the next day on Today).' : 'No days logged in this period yet.'}</p>`}</div>
-      ${prof ? `<div class="card settings-card"><div class="card-head"><h2>Weight trend</h2>${trendPts.length ? `<span class="trend-val">${wShow(trendNow)}</span>` : ''}</div>
+        : `<p class="muted small" style="margin:0">${days.some(d => d.entries.length) ? 'Averages show once you finish a day (tap Start the next day on the Dashboard).' : 'No days logged in this period yet.'}</p>`}</div>
+      <div class="card settings-card"><div class="card-head"><h2>Weight</h2>${prof && trendPts.length ? `<span class="trend-val" title="Trend weight">${wShow(trendNow)}</span>` : ''}</div>
+        ${!prof ? '<p class="muted small" style="margin:0">Finish setup to see your weight trend.</p>' : `
         ${trendPts.length ? `${trendChart(trendPts, chartFrom)}
-          <div class="chart-legend"><span><i class="lg-dot"></i>Scale weight</span><span><i class="lg-line"></i>Trend</span></div>
-          <p class="muted small" style="margin:8px 0 0">Scale weight jumps around with water, salt and food in your stomach. The trend line smooths that out, so watch the line, not single readings.${trendChange != null ? ` Trend change in this period: <b>${wDelta(trendChange)}</b>.` : ''}</p>`
-        : '<p class="muted small" style="margin:0">Log a weigh-in below to start your trend line.</p>'}</div>` : ''}
-      <div class="card settings-card"><h2>Weight</h2>
-        ${prof ? `<div class="stat-grid">
-          <div><small>Current</small><b>${wShow(cur)}</b><span>${latest ? 'weighed ' + shortDate(latest.t) : 'from setup'}</span></div>
-          <div><small>Estimated from eating</small><b>${st.estChange != null && st.count ? wDelta(st.estChange) : '—'}</b><span>vs burning ${k0(st.tdee)} kcal/day</span></div>
-          ${actual != null ? `<div><small>Actual (weigh-ins)</small><b>${wDelta(actual)}</b><span>since ${shortDate(base.t)}</span></div>` : ''}
-          ${tgt ? `<div><small>Goal</small><b>${wShow(tgt)}</b><span>${eta ? `about ${eta} week${eta === 1 ? '' : 's'} at this pace` : st.count >= 3 ? 'not moving toward it yet' : ''}</span></div>` : ''}</div>
-          <p class="muted small" style="margin:12px 0 0">${proj ? `If you keep eating like this, you'd weigh about ${proj}. Weigh in regularly so this stays accurate.` : 'Log at least 3 full days to see where your weight is heading.'}</p>`
-        : '<p class="muted small" style="margin:0">Finish setup to see weight estimates.</p>'}</div>
+          <div class="chart-legend"><span><i class="lg-dot"></i>Scale weight</span><span><i class="lg-line"></i>Trend</span></div>` : '<p class="muted small" style="margin:0 0 12px">Log a weigh-in below to start your trend line.</p>'}
+        <div class="stat-grid" style="margin-top:12px">
+          <div><small>Last weigh-in</small><b>${wShow(cur)}</b><span>${latest ? shortDate(latest.t) : 'from setup'}</span></div>
+          <div><small>Trend change</small><b>${trendChange != null ? wDelta(trendChange) : '—'}</b><span>in this period</span></div>
+          <div><small>Expected from eating</small><b>${st.estChange != null && st.count ? wDelta(st.estChange) : '—'}</b><span>vs burning ${k0(st.tdee)} kcal/day</span></div>
+          ${tgt ? `<div><small>Goal</small><b>${wShow(tgt)}</b><span>${eta ? `about ${eta} week${eta === 1 ? '' : 's'} at this pace` : st.count >= 3 ? 'not moving toward it yet' : 'needs 3 full days'}</span></div>` : ''}</div>
+        <p class="muted small" style="margin:12px 0 0">The scale jumps around with water, salt and food, so watch the trend line, not single readings. ${proj ? `If you keep eating like this, you'd weigh about ${proj}.` : 'Log at least 3 full days to see where your weight is heading.'}</p>`}</div>
       ${prof ? `<div class="card settings-card"><h2>Weigh-in</h2>
         ${due.due ? '<p class="due-text">Time for your weigh-in.</p>' : `<p class="muted small" style="margin:0 0 10px">Next weigh-in: <b>${shortDate(due.next)}, ${timeLabel(due.next)}</b></p>`}
         <div class="add-row" style="margin-top:6px"><input class="input" id="wiVal" type="number" inputmode="decimal" min="20" step="0.1" placeholder="${wShow(cur).split(' ')[0]}" aria-label="Your weight in ${wUnit()}" style="flex:1"><span class="muted" style="align-self:center">${wUnit()}</span><button class="btn" type="button" id="wiSave">Save</button></div>
@@ -1255,18 +1270,19 @@ window.MacrosApp = { start(ctx) {
   // Water: tap the glass to log one; the glass fills toward your daily goal
   const waterCfg = () => Object.assign({ goal: 8, ml: 250 }, settings.water);
   const GLASS_PATH = 'M7 4h26l-3.2 38.4A3 3 0 0 1 26.8 45H13.2a3 3 0 0 1-3-2.6L7 4Z';
-  const glassSvg = fill => `<svg viewBox="0 0 40 48" width="44" height="52" aria-hidden="true"><defs><clipPath id="glassClip"><path d="${GLASS_PATH}"/></clipPath></defs>
-    <rect x="0" y="${(4 + 41 * (1 - fill)).toFixed(1)}" width="40" height="48" class="glass-water" clip-path="url(#glassClip)"/><path d="${GLASS_PATH}" class="glass-edge"/></svg>`;
-  function renderWater() {
+  const glassSvg = (fill, id) => `<svg viewBox="0 0 40 48" width="44" height="52" aria-hidden="true"><defs><clipPath id="${id}"><path d="${GLASS_PATH}"/></clipPath></defs>
+    <rect x="0" y="${(4 + 41 * (1 - fill)).toFixed(1)}" width="40" height="48" class="glass-water" clip-path="url(#${id})"/><path d="${GLASS_PATH}" class="glass-edge"/></svg>`;
+  function renderWater(el) {
+    el = el || $('#water'); if (!el) return;
     const d = curDay(), c = waterCfg(), n = d.water || 0;
-    $('#water').innerHTML = `<button class="glass-btn" type="button" id="waterAdd" aria-label="Log one glass of water (${c.ml} ml)">${glassSvg(Math.min(n / c.goal, 1))}</button>
-      <div class="water-txt"><b>${n} of ${c.goal} glasses</b><small>${k0(n * c.ml)} ml today · tap the glass after each one</small></div>
-      ${n ? '<button class="icon-btn" type="button" id="waterUndo" aria-label="Remove one glass">&minus;</button>' : ''}`;
-    $('#waterAdd').onclick = () => {
-      d.water = n + 1; saveDays(); renderWater(); $('#waterAdd').classList.add('pop');
+    el.innerHTML = `<button class="glass-btn" type="button" data-water="add" aria-label="Log one glass of water (${c.ml} ml)">${glassSvg(Math.min(n / c.goal, 1), 'clip-' + el.id)}</button>
+      <div class="water-txt"><b>${n} of ${c.goal} glasses</b><small>${k0(n * c.ml)} ml water today · tap the glass after each one</small></div>
+      ${n ? '<button class="icon-btn" type="button" data-water="undo" aria-label="Remove one glass">&minus;</button>' : ''}`;
+    $('[data-water="add"]', el).onclick = () => {
+      d.water = n + 1; saveDays(); renderWater(el); $('[data-water="add"]', el).classList.add('pop');
       if (d.water === c.goal) toast('Water goal reached. Nice!');
     };
-    if (n) $('#waterUndo').onclick = () => { d.water = Math.max(0, n - 1); saveDays(); renderWater(); };
+    if (n) $('[data-water="undo"]', el).onclick = () => { d.water = Math.max(0, n - 1); saveDays(); renderWater(el); };
   }
 
   // Dashboard: "Today" and "This week" pages; tap the switch or swipe sideways
@@ -1352,9 +1368,9 @@ window.MacrosApp = { start(ctx) {
   // Tutorial: a guided tour plus a first-week checklist (ticks itself where it can tell)
   const TOUR = [
     { t: 'Your Dashboard', go: '#day', b: 'The ring shows calories eaten against your target, and the bars show protein, carbs, fat and fiber. Tap the calories at the top right to see what’s <b>left</b>. Swipe left (or tap <b>This week</b>) for Monday to Sunday.' },
-    { t: 'Add what you eat', go: '#add', b: 'Type or tap the mic: <i>“2 eggs and 1 cup rice”</i>, <i>“150 g chicken breast”</i>, or by calories: <i>“300 kcal nuggets”</i>. Check each match, switch <b>Cooked / Raw</b> if needed, then tap <b>Add to Day</b>.' },
-    { t: 'Browse foods', go: '#add', b: 'Below the box you can browse every food. Tap <b>Protein</b>, <b>Carbs</b>, <b>Fat</b> or <b>Fiber</b> to see the best sources. Silog meals let you change each part, like adding an extra hotdog.' },
-    { t: 'Drink water', go: '#add', b: 'Tap the glass on the Add page after every glass of water. Set your daily goal and glass size in Menu → Settings.' },
+    { t: 'Add what you eat', go: '#add', b: 'Tap <b>+</b> next to a meal on the Dashboard, or open <b>Add</b>. Type or tap the mic: <i>“2 eggs and 1 cup rice”</i>, <i>“150 g chicken breast”</i>, or by calories: <i>“300 kcal nuggets”</i>. Check each match, switch <b>Cooked / Raw</b> if needed, then tap <b>Add to Day</b>.' },
+    { t: 'Browse foods', go: '#add', b: 'Below the box, tap a category to open it, or tap <b>Protein</b>, <b>Carbs</b>, <b>Fat</b> or <b>Fiber</b> to see the best sources. <b>Recent</b> foods are one tap away. Foods marked <b>Estimate</b> are recipe estimates, not lab values.' },
+    { t: 'Drink water', go: '#day', b: 'Tap the glass on the Dashboard or the Add page after every glass of water. Set your daily goal and glass size in Menu → Settings.' },
     { t: 'Notes and new days', go: '#day', b: 'Tap the note icon next to a meal to write how it went. When your day ends, tap <b>Start Day 2</b>. Days never change by themselves at midnight.' },
     { t: 'Goals and phases', go: '#goals', b: 'Menu → Goals holds your targets. Change calories and the macros follow; type a macro to lock it. Add phases like Bulking, Cutting or Hyrox and switch whenever your plan changes.' },
     { t: 'Progress and weigh-ins', go: '#progress', b: 'Menu → Progress shows days logged, your averages and your weight trend. Weigh in at the same time each time; the trend line smooths out daily ups and downs.' },
