@@ -296,3 +296,26 @@ a { color: var(--accent); }
   .ring { width: 104px; height: 104px; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* ---------- Welcome / sign-in gate ---------- */
+.gate { min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: calc(28px + env(safe-area-inset-top)) 16px 40px; }
+.gate-card { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 14px; }
+.gate-brand { text-align: center; margin: 10px 0 8px; }
+.gate-brand img { border-radius: 18px; box-shadow: var(--shadow); }
+.gate-brand h1 { font-size: 2rem; margin: 12px 0 4px; letter-spacing: -.02em; }
+.gate-brand p { margin: 0; color: var(--muted); }
+.btn.wide { width: 100%; padding: 14px 18px; }
+.btn.google { background: var(--surface); color: var(--text); border: 1.5px solid var(--line); gap: 10px; }
+.seg.two { grid-template-columns: 1fr 1fr; margin-top: 0; }
+.or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: .85rem; }
+.or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.consent { display: flex; gap: 10px; align-items: flex-start; font-size: .9rem; line-height: 1.4; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+.consent input { width: 20px; height: 20px; margin: 1px 0 0; flex: none; accent-color: var(--accent); }
+.gate-msg { min-height: 1.3em; margin: 0; font-size: .9rem; color: var(--danger); text-align: center; }
+.linkish { background: none; border: 0; color: var(--accent); font-weight: 600; padding: 10px 0 0; width: 100%; }
+.legal-overlay { position: fixed; inset: 0; background: rgba(5, 12, 10, .5); z-index: 80; display: flex; align-items: flex-end; justify-content: center; }
+.legal-box { position: relative; background: var(--surface); width: 100%; max-width: 640px; max-height: 88vh; overflow: auto; border-radius: 22px 22px 0 0; padding: 22px 20px calc(24px + env(safe-area-inset-bottom)); }
+@media (min-width: 720px) { .legal-overlay { align-items: center; } .legal-box { border-radius: 22px; } }
+.legal-close { position: sticky; top: 0; float: right; }
+.legal-body h1 { font-size: 1.4rem; } .legal-body h2 { font-size: 1.05rem; margin-top: 20px; }
+.legal-body p, .legal-body li { font-size: .93rem; line-height: 1.55; }

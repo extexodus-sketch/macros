@@ -1,7 +1,11 @@
-/* Macro ID — UI. All data stays in this browser (localStorage); Settings → Backup moves it between devices. */
-(function () {
+/* maCros — UI. boot.js calls MacrosApp.start() after the Terms gate / sign-in.
+ * ctx.prefix namespaces this device's copy per account; ctx.onSave pushes each change to the cloud. */
+window.MacrosApp = { start(ctx) {
   'use strict';
+  ctx = ctx || {};
   const E = window.MacroEngine;
+  const PREFIX = ctx.prefix || 'macro-id:';
+  const acct = ctx.account || null;
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -12,16 +16,23 @@
 
   // ---------- Storage ----------
   const store = {
-    get(k, d) { try { const v = localStorage.getItem('macro-id:' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
-    set(k, v) { try { localStorage.setItem('macro-id:' + k, JSON.stringify(v)); } catch { toast('Could not save — browser storage is full or blocked.'); } },
+    get(k, d) { try { const v = localStorage.getItem(PREFIX + k); return v ? JSON.parse(v) : d; } catch { return d; } },
+    set(k, v) {
+      try { localStorage.setItem(PREFIX + k, JSON.stringify(v)); } catch { toast('Could not save — browser storage is full or blocked.'); }
+      if (ctx.onSave) ctx.onSave(k, v);
+    },
   };
   // Bulking targets: 2,332 kcal / 129 g protein (given); fat 25% of kcal; carbs fill the rest; fiber 14 g per 1,000 kcal.
   const DEFAULTS = { targets: { kcal: 2332, p: 129, c: 308, f: 65, fib: 33 }, voiceLang: 'en-PH', theme: 'auto', lastMeal: 'Breakfast' };
   const OLD_DEFAULT_TARGETS = { kcal: 2000, p: 140, c: 200, f: 65, fib: 30 };
-  let settings = Object.assign({}, DEFAULTS, store.get('settings', {}));
-  if (!settings.targets || JSON.stringify(settings.targets) === JSON.stringify(OLD_DEFAULT_TARGETS)) settings.targets = { ...DEFAULTS.targets };
-  settings.targets = Object.assign({}, DEFAULTS.targets, settings.targets);
-  delete settings.dayStart;
+  function readSettings() {
+    const st = Object.assign({}, DEFAULTS, store.get('settings', {}));
+    if (!st.targets || JSON.stringify(st.targets) === JSON.stringify(OLD_DEFAULT_TARGETS)) st.targets = { ...DEFAULTS.targets };
+    st.targets = Object.assign({}, DEFAULTS.targets, st.targets);
+    delete st.dayStart;
+    return st;
+  }
+  let settings = readSettings();
   let custom = store.get('custom', []);
   let recent = store.get('recent', []);
   let days = loadDays();
@@ -659,6 +670,9 @@
   function renderSettings() {
     const T = settings.targets;
     $('#settingsBody').innerHTML = `
+      ${acct ? `<div class="card settings-card"><h2>Account</h2>
+        <p class="muted small" style="margin:0">Signed in as <b>${esc(acct.email)}</b>${acct.provider === 'google.com' ? ' with Google' : ''}. Your days, recipes and foods are saved to your account and sync across your devices.</p>
+        <div class="row-actions"><button class="btn ghost small" type="button" id="signOutBtn">Sign out</button></div></div>` : ''}
       <div class="card settings-card"><h2>Daily targets</h2>
         <div class="form-grid">
           ${[['kcal', 'Calories'], ['p', 'Protein (g)'], ['c', 'Carbs (g)'], ['f', 'Fat (g)'], ['fib', 'Fiber (g)']].map(([k, l]) => `<label class="field">${l}<input class="input" type="number" inputmode="numeric" min="0" data-target="${k}" value="${T[k]}"></label>`).join('')}
@@ -673,8 +687,8 @@
         </div>
         <p class="muted small" style="margin:10px 0 0">Days are manual: on <b>My Day</b>, tap “start Day ${curDay().n + 1}” whenever your day ends.</p>
       </div>
-      <div class="card settings-card"><h2>Backup &amp; move to another device</h2>
-        <p class="muted small" style="margin:0">Your days, recipes and own foods live in this browser only, and your phone and PC each keep their own. Download a backup file and open it on the other device with <b>Restore</b>.</p>
+      <div class="card settings-card"><h2>${acct ? 'Backup' : 'Backup &amp; move to another device'}</h2>
+        <p class="muted small" style="margin:0">${acct ? 'Everything is already saved to your account. You can still download a copy for yourself, or restore one (this replaces your current data).' : 'Your days, recipes and own foods live in this browser only, and your phone and PC each keep their own. Download a backup file and open it on the other device with <b>Restore</b>.'}</p>
         <div class="row-actions"><button class="btn small" type="button" id="exportBtn">Download backup</button>
           <label class="btn small outline" style="cursor:pointer">Restore backup<input type="file" id="importFile" accept="application/json,.json" hidden></label></div>
       </div>
@@ -689,9 +703,17 @@
         </ul>
         <p class="muted small" style="margin:12px 0 0">${E.all().filter(f => !f.sugg).length} verified foods · ${E.all().filter(f => f.sugg).length} suggestions · ${custom.length} of your own · ${days.length} day${days.length === 1 ? '' : 's'} logged</p>
       </div>
+      <div class="card settings-card"><h2>Legal</h2>
+        <div class="row-actions" style="margin-top:0"><a class="btn ghost small" href="terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a><a class="btn ghost small" href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a></div>
+        <p class="muted small" style="margin:10px 0 0">maCros gives estimates for information only. It isn't medical or dietary advice.</p>
+      </div>
       <div class="card settings-card"><h2>Danger zone</h2>
-        <div class="row-actions" style="margin-top:0"><button class="btn danger small" type="button" id="resetBtn">Erase all my data</button></div>
+        <div class="row-actions" style="margin-top:0">${acct ? '<button class="btn danger small" type="button" id="deleteAcctBtn">Delete my account</button>' : '<button class="btn danger small" type="button" id="resetBtn">Erase all my data</button>'}</div>
       </div>`;
+    if (acct) {
+      $('#signOutBtn').onclick = () => { if (confirm('Sign out of maCros on this device?')) acct.signOut(); };
+      $('#deleteAcctBtn').onclick = openDeleteAccount;
+    }
     $$('[data-target]').forEach(inp => inp.addEventListener('input', () => {
       settings.targets[inp.dataset.target] = Math.max(0, parseFloat(inp.value) || 0); saveSettings();
       $('#tgtCheck').textContent = k0(settings.targets.p * 4 + settings.targets.c * 4 + settings.targets.f * 9);
@@ -700,9 +722,9 @@
     $('#setTheme').onchange = e => { settings.theme = e.target.value; saveSettings(); applyTheme(); };
     $('#exportBtn').onclick = exportData;
     $('#importFile').onchange = e => { const f = e.target.files[0]; if (f) importData(f); e.target.value = ''; };
-    $('#resetBtn').onclick = () => {
+    if (!acct) $('#resetBtn').onclick = () => {
       if (!confirm('Erase all your days, recipes, own foods and settings on this device? Download a backup first if you might want them.')) return;
-      ['settings', 'custom', 'log', 'days', 'recent'].forEach(k => { try { localStorage.removeItem('macro-id:' + k); } catch { /* ignore */ } });
+      ['settings', 'custom', 'log', 'days', 'recent'].forEach(k => { try { localStorage.removeItem(PREFIX + k); } catch { /* ignore */ } });
       location.reload();
     };
   }
@@ -711,7 +733,7 @@
     const data = { app: 'macro-id', version: 2, exportedAt: new Date().toISOString(), settings, custom, days, recent };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `macro-id-backup-day${curDay().n}-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `macros-backup-day${curDay().n}-${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     toast('Backup downloaded');
   }
@@ -719,7 +741,7 @@
     const r = new FileReader();
     r.onload = () => {
       let d; try { d = JSON.parse(r.result); } catch { return toast('That file isn’t a valid backup.'); }
-      if (!d || d.app !== 'macro-id') return toast('That file isn’t a Macro ID backup.');
+      if (!d || d.app !== 'macro-id') return toast('That file isn’t a maCros backup.');
       if (!confirm(`Restore this backup from ${new Date(d.exportedAt).toLocaleString()}? It replaces the data on this device.`)) return;
       settings = Object.assign({}, DEFAULTS, d.settings || {}); settings.targets = Object.assign({}, DEFAULTS.targets, settings.targets || {}); delete settings.dayStart;
       custom = Array.isArray(d.custom) ? d.custom : [];
@@ -733,10 +755,42 @@
     r.readAsText(file);
   }
 
+  function openDeleteAccount() {
+    const pw = acct.provider === 'password';
+    openSheet(`${sheetHead('Delete my account', 'This permanently deletes your maCros account and all your days, recipes and own foods. It can’t be undone.')}
+      <div class="row-actions" style="margin-top:0"><button class="btn ghost small" type="button" id="delBackup">Download a backup first</button></div>
+      <form id="delForm" novalidate>
+        ${pw ? '<label class="field" style="margin-top:14px">Confirm your password<input class="input" name="pw" type="password" autocomplete="current-password"></label>' : '<p class="muted small" style="margin:14px 0 0">You’ll be asked to confirm with Google.</p>'}
+        <label class="field" style="margin-top:12px">Type DELETE to confirm<input class="input" name="confirm" autocomplete="off" autocapitalize="characters"></label>
+        <p class="muted small" id="delMsg" role="alert" style="min-height:1.2em"></p>
+        <div class="add-row"><button class="btn danger grow" type="submit">Delete my account forever</button></div>
+      </form>`);
+    $('#delBackup').onclick = exportData;
+    $('#delForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      if (String(fd.get('confirm') || '').trim().toUpperCase() !== 'DELETE') { $('#delMsg').textContent = 'Type DELETE to confirm.'; return; }
+      $('#delMsg').textContent = 'Deleting…';
+      try { await acct.deleteAccount(fd.get('pw')); } catch (err) { $('#delMsg').textContent = err.message || 'Couldn’t delete. Try again.'; }
+    });
+  }
+
+  // Called by boot.js when another device changed your data
+  function reload() {
+    settings = readSettings(); custom = store.get('custom', []); recent = store.get('recent', []); days = loadDays();
+    E.setCustom(custom); applyTheme();
+    viewIdx = Math.min(viewIdx, days.length - 1);
+    updatePill();
+    if (!$('#view-day').hidden) renderDay();
+    else if (!$('#view-foods').hidden) renderFoodList();
+    else if (!$('#view-settings').hidden && !$('#view-settings').contains(document.activeElement)) renderSettings();
+    else if (!$('#view-identify').hidden && !q.value.trim()) renderResults();
+  }
+
   // ---------- Boot ----------
   updatePill();
   autosize();
   identify();
   route();
-  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});
-})();
+  return { reload, toast };
+} };
