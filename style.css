@@ -559,3 +559,21 @@ a { color: var(--accent); }
 .nudge-card span { color: var(--muted); font-size: .9rem; }
 .today-actions { align-items: center; }
 #foodCount { margin: 2px 4px 8px; }
+
+/* ---------- Guided tour: spotlight on the real element ---------- */
+.coach { position: fixed; inset: 0; z-index: 90; }
+.coach.nohole { background: rgba(8, 20, 16, .6); }
+.coach-hole { position: fixed; border-radius: 14px; box-shadow: 0 0 0 9999px rgba(8, 20, 16, .6); outline: 2px solid var(--accent-bright); outline-offset: 2px;
+  transition: left .25s, top .25s, width .25s, height .25s; pointer-events: none; }
+.coach-card { position: fixed; left: 50%; transform: translateX(-50%); width: calc(100% - 32px); max-width: 420px; background: var(--surface); color: var(--text);
+  border-radius: 18px; padding: 16px; box-shadow: 0 12px 40px rgba(0, 0, 0, .3); animation: fade .2s; }
+.coach-card h2 { margin: 4px 0 6px; }
+.coach-card .add-row { margin-top: 14px; }
+.own-tag { background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 2px 10px; font-size: .78rem; font-weight: 700; }
+@media (prefers-reduced-motion: reduce) { .coach-hole { transition: none; } }
+.stepper { display: flex; align-items: center; gap: 10px; }
+.stepper .icon-btn { width: 46px; height: 46px; font-size: 1.4rem; flex: none; color: var(--accent); }
+.stepper-val { flex: 1; display: flex; align-items: center; gap: 8px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--surface); padding: 0 12px; }
+.stepper-val:focus-within { border-color: var(--accent); }
+.stepper-val .input { border: 0; padding: 10px 0; flex: 1; text-align: center; font-size: 1.25rem; font-weight: 800; font-variant-numeric: tabular-nums; width: 100%; }
+.stepper-val span { color: var(--muted); font-weight: 600; }

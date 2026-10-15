@@ -958,12 +958,22 @@ window.MacrosApp = { start(ctx) {
   function phaseTargets(type) {
     const t = phaseType(type);
     if (!t.goal || !settings.profile || !settings.profile.kg) return { ...settings.targets };
-    return S.plan({ ...settings.profile, kg: currentKg(), goal: t.goal }).targets;
+    return S.plan({ ...settings.profile, kg: currentKg(), goal: t.goal }, { tdee: settings.maintKcal }).targets;
   }
   function switchPhase(id) {
     syncPhase(); const ph = settings.phases.find(p => p.id === id); if (!ph || ph.id === settings.phaseId) return;
     settings.phaseId = id; settings.targets = { ...ph.targets }; settings.locks = { ...(ph.locks || {}) };
     saveSettings(); updatePill(); toast(`Switched to ${ph.name}: ${k0(ph.targets.kcal)} kcal`);
+  }
+
+  // ---------- Maintenance calories: estimated from your stats, or your own number ----------
+  const estMaintenance = () => settings.profile && settings.profile.kg ? S.plan({ ...settings.profile, kg: currentKg() }).tdee : 0;
+  const maintenance = () => settings.maintKcal ? { kcal: settings.maintKcal, own: true } : { kcal: estMaintenance(), own: false };
+  // Phases are built on maintenance, so recalculate the calculated ones when it changes
+  function recalcPhases() {
+    syncPhase();
+    (settings.phases || []).forEach(ph => { if (phaseType(ph.type).goal) { ph.targets = phaseTargets(ph.type); ph.locks = {}; } });
+    const ph = activePhase(); if (ph) { settings.targets = { ...ph.targets }; settings.locks = { ...ph.locks }; }
   }
 
   // ---------- Targets: change calories and the unlocked macros follow ----------
@@ -1009,13 +1019,19 @@ window.MacrosApp = { start(ctx) {
 
   function renderGoals() {
     ensurePhases();
-    const T = settings.targets, L = settings.locks, prof = settings.profile;
+    const T = settings.targets, L = settings.locks, prof = settings.profile, maint = maintenance();
     const lockBtn = k => `<button type="button" class="lock${L[k] ? ' on' : ''}" data-lock="${k}" aria-pressed="${!!L[k]}" aria-label="${L[k] ? 'Unlock' : 'Lock'} ${k}" title="${L[k] ? 'Locked: stays as you set it' : 'Auto: follows calories'}">${L[k] ? LOCK : UNLOCK}</button>`;
     $('#goalsBody').innerHTML = `
       <div class="card settings-card"><h2>Current goal</h2>
         <p class="muted small" style="margin:0">${prof ? esc(S.summary({ ...prof, kg: currentKg() })) : 'Not set up yet.'}</p>
         <div class="row-actions"><button class="btn small" type="button" id="statsBtn">Update my stats</button><button class="btn small outline" type="button" id="redoSetupBtn">Change my goal</button></div>
         <p class="muted small" style="margin:10px 0 0">Update your stats when your weight or activity changes. Change your goal to answer the setup questions again.</p></div>
+      ${prof ? `<div class="card settings-card"><div class="card-head"><h2>Maintenance calories</h2><span class="${maint.own ? 'own-tag' : 'muted small'}">${maint.own ? 'Your number' : 'Estimated'}</span></div>
+        <p class="muted small" style="margin:0 0 10px">What you burn in a normal day, worked out from your weight, height, age and activity. Phases build on it: lean bulk +250, bulk +500, cut −500.</p>
+        <div class="stepper"><button class="icon-btn" type="button" data-maint="-50" aria-label="50 kcal less">&minus;</button>
+          <label class="stepper-val"><input class="input" id="maintVal" type="number" inputmode="numeric" min="1000" max="6000" step="10" value="${maint.kcal}" aria-label="Maintenance calories"><span>kcal</span></label>
+          <button class="icon-btn" type="button" data-maint="50" aria-label="50 kcal more">+</button></div>
+        <p class="muted small" style="margin:10px 0 0">${maint.own ? `Calculated from your stats: ${k0(estMaintenance())} kcal. <button class="linkish small-link" type="button" id="maintReset">Use the calculated number</button>` : 'Tap − or + to go down or up by 50, or type your own number.'}</p></div>` : ''}
       <div class="card settings-card"><div class="card-head"><h2>Phases</h2><button class="btn small ghost" type="button" id="addPhaseBtn">+ Add phase</button></div>
         <div class="phase-list">${settings.phases.map(p => `<div class="phase-row${p.id === settings.phaseId ? ' on' : ''}">
             <button type="button" class="phase-main" data-phase="${p.id}" aria-pressed="${p.id === settings.phaseId}"><span class="radio" aria-hidden="true"></span>
@@ -1030,6 +1046,26 @@ window.MacrosApp = { start(ctx) {
     tgtNote();
     $('#redoSetupBtn').onclick = () => openSetup(true);
     $('#statsBtn').onclick = openStats;
+    if (prof) {
+      // − / + nudge by 50 and save after a short pause; typing saves when you leave the box
+      let maintT;
+      const applyMaint = () => {
+        const v = Math.round(parseFloat($('#maintVal').value));
+        if (!(v >= 1000 && v <= 6000)) return toast('Enter maintenance calories between 1,000 and 6,000.');
+        if (v === maintenance().kcal && settings.maintKcal) return;
+        settings.maintKcal = v; recalcPhases(); saveSettings(); updatePill(); renderGoals();
+        toast(`Maintenance ${k0(v)} kcal · your target is now ${k0(settings.targets.kcal)} kcal`);
+      };
+      $$('[data-maint]', $('#goalsBody')).forEach(b => b.onclick = () => {
+        const inp = $('#maintVal'); inp.value = Math.min(6000, Math.max(1000, (Math.round(parseFloat(inp.value)) || maintenance().kcal) + +b.dataset.maint));
+        clearTimeout(maintT); maintT = setTimeout(applyMaint, 700);
+      });
+      $('#maintVal').addEventListener('change', () => { clearTimeout(maintT); applyMaint(); });
+      if ($('#maintReset')) $('#maintReset').onclick = () => {
+        delete settings.maintKcal; recalcPhases(); saveSettings(); updatePill(); renderGoals();
+        toast(`Back to the estimate: ${k0(maintenance().kcal)} kcal`);
+      };
+    }
     $('#addPhaseBtn').onclick = () => openPhaseForm(null);
     $('#autoBtn').onclick = () => {
       settings.locks = {}; rebalance('kcal'); syncPhase(); saveSettings(); updatePill(); renderGoals();
@@ -1174,7 +1210,7 @@ window.MacrosApp = { start(ctx) {
     // Averages use finished days only; the current day is still being eaten
     const logged = days.filter(d => d !== curDay() && d.entries.length && d.start >= from).map(d => E.sumMacros(d.entries));
     const T = settings.targets; const avg = k => logged.length ? logged.reduce((a, t) => a + t[k], 0) / logged.length : 0;
-    const tdee = settings.profile && settings.profile.kg ? S.plan({ ...settings.profile, kg: currentKg() }).tdee : 0;
+    const tdee = settings.profile && settings.profile.kg ? maintenance().kcal : 0;
     return {
       from, span, dates, loggedDays: dates.size, count: logged.length, avgKcal: avg('kcal'), avgP: avg('p'),
       onTarget: logged.filter(t => Math.abs(t.kcal - T.kcal) <= T.kcal * 0.1).length, protHit: logged.filter(t => t.p >= T.p * 0.9).length,
@@ -1366,15 +1402,22 @@ window.MacrosApp = { start(ctx) {
   }
 
   // Tutorial: a guided tour plus a first-week checklist (ticks itself where it can tell)
+  // Each step opens the page and spotlights the real thing on screen
   const TOUR = [
-    { t: 'Your Dashboard', go: '#day', b: 'The ring shows calories eaten against your target, and the bars show protein, carbs, fat and fiber. Tap the calories at the top right to see what’s <b>left</b>. Swipe left (or tap <b>This week</b>) for Monday to Sunday.' },
-    { t: 'Add what you eat', go: '#add', b: 'Tap <b>+</b> next to a meal on the Dashboard, or open <b>Add</b>. Type or tap the mic: <i>“2 eggs and 1 cup rice”</i>, <i>“150 g chicken breast”</i>, or by calories: <i>“300 kcal nuggets”</i>. Check each match, switch <b>Cooked / Raw</b> if needed, then tap <b>Add to Day</b>.' },
-    { t: 'Browse foods', go: '#add', b: 'Below the box, tap a category to open it, or tap <b>Protein</b>, <b>Carbs</b>, <b>Fat</b> or <b>Fiber</b> to see the best sources. <b>Recent</b> foods are one tap away. Foods marked <b>Estimate</b> are recipe estimates, not lab values.' },
-    { t: 'Drink water', go: '#day', b: 'Tap the glass on the Dashboard or the Add page after every glass of water. Set your daily goal and glass size in Menu → Settings.' },
-    { t: 'Notes and new days', go: '#day', b: 'Tap the note icon next to a meal to write how it went. When your day ends, tap <b>Start Day 2</b>. Days never change by themselves at midnight.' },
-    { t: 'Goals and phases', go: '#goals', b: 'Menu → Goals holds your targets. Change calories and the macros follow; type a macro to lock it. Add phases like Bulking, Cutting or Hyrox and switch whenever your plan changes.' },
-    { t: 'Progress and weigh-ins', go: '#progress', b: 'Menu → Progress shows days logged, your averages and your weight trend. Weigh in at the same time each time; the trend line smooths out daily ups and downs.' },
-    { t: 'Stuck? Look for Reminder', go: '#day', b: 'Every page has a <b>Reminder</b> button at the bottom with a quick explanation. You can replay this tour any time from Menu → Tutorial.' },
+    { go: '#day', page: 'day', sel: '#dayBody .ring-row', t: 'Your day at a glance', b: 'The ring is calories eaten against your target. The bars are protein, carbs, fat and fiber.' },
+    { go: '#day', page: 'day', sel: '#dashSeg', t: 'Today and This week', b: 'Tap <b>This week</b>, or swipe sideways, to see Monday to Sunday with your weekly totals.' },
+    { go: '#day', page: 'day', sel: '#dayBody .meal-head', t: 'Add food to a meal', b: 'Tap <b>+</b> next to a meal to add what you ate. The note icon beside it lets you write how the meal went.' },
+    { go: '#day', page: 'day', sel: '#waterDash', t: 'Drink water', b: 'Tap the glass after every glass of water. It fills up toward your daily goal.' },
+    { go: '#day', page: 'day', sel: '#dayBody [data-act="newday"]', t: 'Start a new day', b: 'When your day ends, tap <b>Start Day</b>. Days never change by themselves at midnight.' },
+    { go: '#add', sel: '#askBox', t: 'Type or say what you ate', b: '<i>“2 eggs and 1 cup rice”</i>, <i>“150 g chicken breast”</i>, or by calories: <i>“300 kcal nuggets”</i>. Tap the mic to speak instead.' },
+    { go: '#add', sel: '#cats', t: 'Browse foods', b: 'Tap <b>Protein</b>, <b>Carbs</b>, <b>Fat</b> or <b>Fiber</b> to see the best sources, or open a category below. Foods marked <b>Estimate</b> are recipe estimates.' },
+    { go: '#menu', sel: '#menuBody .menu-list', t: 'The Menu', b: '<b>Goals</b> for your targets and phases, <b>Progress</b> for your results, <b>Tutorial</b> for this tour and your checklist, and <b>Settings</b>.' },
+    { go: '#goals', sel: '#maintVal', t: 'Maintenance calories', b: 'What you burn in a normal day. Type your own number any time; your phases are built on it.' },
+    { go: '#goals', sel: '#goalsBody .phase-list', t: 'Phases', b: 'Bulking, cutting, Hyrox… tap a phase to switch. Its targets load everywhere in the app.' },
+    { go: '#goals', sel: '#goalsBody .tgt-grid', t: 'Daily targets', b: 'Change calories and the macros follow. Type a macro yourself and it locks, so the others adjust around it.' },
+    { go: '#progress', sel: '#progressBody .trend-chart, #progressBody .stat-grid', t: 'Progress', b: 'Days logged, your averages and your weight trend. Watch the line, not single readings.' },
+    { go: '#progress', sel: '#wiVal', t: 'Weigh in', b: 'Log your weight here at your usual time. Choose how often in this card.' },
+    { go: '#day', page: 'day', sel: '#dayBody .reminder-link', t: 'Need help later?', b: 'Every page has a <b>Reminder</b> button with a quick explanation. Replay this tour any time from Menu → Tutorial.' },
   ];
   const finishedDays = () => days.filter(d => d !== curDay() && d.entries.length).length;
   const CHECKS = [
@@ -1408,7 +1451,7 @@ window.MacrosApp = { start(ctx) {
     const pr = tourProgress();
     $('#tutorialBody').innerHTML = `
       <div class="card settings-card"><h2>Quick tour</h2>
-        <p class="muted small" style="margin:0">Eight short steps that show every part of maCros. About 2 minutes.</p>
+        <p class="muted small" style="margin:0">${TOUR.length} short steps. It takes you to each part of the app and highlights it on screen. About 2 minutes.</p>
         <div class="row-actions"><button class="btn" type="button" id="tourStart">Start the tour</button></div></div>
       <div class="card settings-card"><div class="card-head"><h2>Your first week</h2><span class="muted small">${pr.done} of ${pr.total} done</span></div>
         <div class="bar" style="margin:0 0 6px"><span style="width:${pr.done / pr.total * 100}%;background:var(--accent-bright)"></span></div>
@@ -1429,22 +1472,61 @@ window.MacrosApp = { start(ctx) {
       tour.done[b.dataset.check] = !tour.done[b.dataset.check]; settings.tour = tour; saveSettings(); renderTutorial();
     });
   }
+  let coach = null;
   function openTour(i) {
+    if (!$('#sheet').hidden) closeSheet();
     const st = TOUR[i];
-    openSheet(`${sheetHead(`${i + 1}. ${st.t}`, `Step ${i + 1} of ${TOUR.length}`)}
-      <div class="tour-dots" aria-hidden="true">${TOUR.map((_, j) => `<i class="${j <= i ? 'on' : ''}"></i>`).join('')}</div>
-      <p class="tour-body">${st.b}</p>
-      <div class="add-row">${i > 0 ? '<button class="btn ghost" type="button" id="tourBack">Back</button>' : ''}
-        <button class="btn grow" type="button" id="tourNext">${i < TOUR.length - 1 ? 'Next' : 'Finish'}</button></div>
-      <div class="row-actions"><button class="btn ghost small" type="button" id="tourShow">Show me this page</button></div>`);
-    if (i > 0) $('#tourBack').onclick = () => openTour(i - 1);
-    $('#tourNext').onclick = () => {
-      if (i < TOUR.length - 1) return openTour(i + 1);
-      settings.tour = Object.assign({}, settings.tour, { seen: true, hide: true }); saveSettings(); closeSheet();
-      toast('Tour done. Your first-week checklist is in Menu → Tutorial.'); route();
-    };
-    $('#tourShow').onclick = () => { closeSheet(); if (location.hash === st.go) route(); else location.hash = st.go; };
+    if (location.hash !== st.go) location.hash = st.go; else route();
+    if (st.page) { viewIdx = days.length - 1; showDash(st.page); }
+    setTimeout(() => {
+      const el = st.sel.split(',').map(x => document.querySelector(x.trim())).find(e => e && e.getClientRects().length);
+      if (el) el.scrollIntoView({ block: 'center' });
+      setTimeout(() => drawCoach(i, el), 260);
+    }, 140);
   }
+  function drawCoach(i, el) {
+    const st = TOUR[i], last = i === TOUR.length - 1;
+    if (!coach) {
+      coach = document.createElement('div'); coach.className = 'coach'; document.body.appendChild(coach);
+      window.addEventListener('resize', placeCoach); window.addEventListener('scroll', placeCoach, { passive: true });
+    }
+    coach.innerHTML = `<div class="coach-hole"></div>
+      <div class="coach-card" role="dialog" aria-modal="true" aria-labelledby="coachTitle">
+        <div class="tour-dots" aria-hidden="true">${TOUR.map((_, j) => `<i class="${j <= i ? 'on' : ''}"></i>`).join('')}</div>
+        <div class="eyebrow">Step ${i + 1} of ${TOUR.length}</div>
+        <h2 id="coachTitle">${st.t}</h2>
+        <p class="tour-body">${st.b}</p>
+        <div class="add-row"><button class="btn ghost" type="button" data-c="skip">${last ? 'Close' : 'Skip'}</button>
+          ${i > 0 ? '<button class="btn ghost" type="button" data-c="back">Back</button>' : ''}
+          <button class="btn grow" type="button" data-c="next">${last ? 'Finish' : 'Next'}</button></div>
+      </div>`;
+    coach.classList.toggle('nohole', !el);
+    coach._el = el; placeCoach();
+    coach.onclick = e => {
+      const b = e.target.closest('[data-c]'); if (!b) return;
+      if (b.dataset.c === 'next') return last ? endTour(true) : openTour(i + 1);
+      if (b.dataset.c === 'back') return openTour(i - 1);
+      endTour(false);
+    };
+    setTimeout(() => { const n = coach && coach.querySelector('[data-c="next"]'); if (n) n.focus(); }, 30);
+  }
+  function placeCoach() {
+    if (!coach) return;
+    const el = coach._el, hole = coach.querySelector('.coach-hole'), card = coach.querySelector('.coach-card');
+    const vh = window.innerHeight, ch = card.offsetHeight;
+    if (!el || !el.isConnected) { hole.style.display = 'none'; card.style.top = Math.max(12, (vh - ch) / 2) + 'px'; return; }
+    const r = el.getBoundingClientRect(), pad = 6;
+    Object.assign(hole.style, { display: 'block', left: `${r.left - pad}px`, top: `${r.top - pad}px`, width: `${r.width + pad * 2}px`, height: `${r.height + pad * 2}px` });
+    const below = vh - r.bottom - pad;
+    card.style.top = (below > ch + 20 ? r.bottom + pad + 12 : r.top - pad > ch + 20 ? r.top - pad - 12 - ch : Math.max(12, vh - ch - 12)) + 'px';
+  }
+  function endTour(finished) {
+    if (coach) { coach.remove(); coach = null; window.removeEventListener('resize', placeCoach); window.removeEventListener('scroll', placeCoach); }
+    settings.tour = Object.assign({}, settings.tour, { hide: true }, finished ? { seen: true } : {}); saveSettings();
+    toast(finished ? 'Tour done. Your first-week checklist is in Menu → Tutorial.' : 'You can replay the tour from Menu → Tutorial.');
+    route();
+  }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && coach) endTour(false); });
 
   // ---------- Setup (body stats + goal → targets) ----------
   function openSetup(canCancel) {
@@ -1452,7 +1534,7 @@ window.MacrosApp = { start(ctx) {
     const close = () => { box.hidden = true; box.innerHTML = ''; appEl.hidden = false; window.scrollTo(0, 0); };
     appEl.hidden = true; box.hidden = false;
     window.MacrosSetup.open(box, {
-      profile: settings.profile,
+      profile: settings.profile, tdee: settings.maintKcal,
       onCancel: canCancel ? close : null,
       onDone: (profile, targets) => {
         settings.profile = profile; settings.targets = { ...targets }; settings.locks = {}; settings.setupDone = true;

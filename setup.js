@@ -34,10 +34,10 @@ window.MacrosSetup = (() => {
   const activity = k => ACTIVITY.find(a => a.k === k) || ACTIVITY[0];
   const goal = k => GOALS.find(g => g.k === k) || GOALS[1];
 
-  // p: { sex: 'm'|'f', age, cm, kg, activity, goal, targetKg }
-  function plan(p) {
+  // p: { sex: 'm'|'f', age, cm, kg, activity, goal, targetKg }; opts.tdee = your own maintenance calories (replaces the estimate)
+  function plan(p, opts = {}) {
     const bmr = 10 * p.kg + 6.25 * p.cm - 5 * p.age + (p.sex === 'm' ? 5 : -161);
-    const tdee = bmr * activity(p.activity).f;
+    const tdee = opts.tdee || bmr * activity(p.activity).f;
     const g = goal(p.goal);
     const floor = p.sex === 'm' ? 1500 : 1200;
     const kcal = Math.round(Math.max(floor, tdee + g.delta) / 10) * 10;
@@ -178,13 +178,13 @@ window.MacrosSetup = (() => {
       };
     }
     function stepPlan() {
-      const p = profile(), res = plan(p), t = res.targets;
+      const p = profile(), res = plan(p, { tdee: opts.tdee }), t = res.targets;
       frame('Your plan', `${goal(p.goal).label} · ${activity(p.activity).label.toLowerCase()}`, `
         <div class="card plan-card">
           <div class="eyebrow">Daily target</div>
           <div class="kcal-big" style="margin-top:4px">${t.kcal.toLocaleString()}<span>kcal</span></div>
           <div class="macro-grid">${[['p', 'Protein'], ['c', 'Carbs'], ['f', 'Fat'], ['fib', 'Fiber']].map(([k, l]) => `<div class="mtile ${k}"><div class="lab"><i class="dot-${k}"></i>${l}</div><div class="val">${t[k]}<small>g</small></div></div>`).join('')}</div>
-          <p class="muted small" style="margin:12px 0 0">You burn about ${res.tdee.toLocaleString()} kcal a day (resting ${res.bmr.toLocaleString()} kcal).</p>
+          <p class="muted small" style="margin:12px 0 0">${opts.tdee ? `Using your maintenance of ${res.tdee.toLocaleString()} kcal a day (set in Goals).` : `You burn about ${res.tdee.toLocaleString()} kcal a day (resting ${res.bmr.toLocaleString()} kcal).`}</p>
         </div>
         <h3 class="section-title">What to do</h3>
         <ul class="plan-tips">${tips(p, res).map(x => `<li>${esc(x)}</li>`).join('')}</ul>
