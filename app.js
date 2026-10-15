@@ -123,7 +123,8 @@ window.MacrosApp = { start(ctx) {
       add: `<ol class="steps">
           <li><b class="n">1</b><div><b>Type or tap the mic</b> and say what you ate, with amounts: <span class="muted">“150 grams lean ground pork and one cup of rice”</span>, or by calories: <span class="muted">“532 calories of chicken nuggets”</span>. English, Tagalog or Taglish all work.</div></li>
           <li><b class="n">2</b><div><b>Check the matches.</b> Fix any amount, switch between cooked and raw, or pick a different food. No amount? It assumes 1 normal serving and tells you.</div></li>
-          <li><b class="n">3</b><div><b>Add to your day</b> for a running total. Made your own sauce? Type its ingredients and tap <b>Save as recipe</b>.</div></li>
+          <li><b class="n">3</b><div><b>Scan a barcode</b> on packaged food, or use <b>Quick add</b> to type calories and macros yourself.</div></li>
+          <li><b class="n">4</b><div><b>Add to your day</b> for a running total. Made your own sauce? Type its ingredients and tap <b>Save as recipe</b>.</div></li>
         </ol>
         <p class="muted small" style="margin:14px 0 0">Weights are <b>cooked, as eaten</b> unless you pick raw. Calculations use only USDA, FNRI and label values (${verified} foods). Recipe estimates are marked <b>Estimate</b> and are only used when you pick one.</p>
         <h3 class="section-title">Browse foods</h3>
@@ -725,6 +726,115 @@ window.MacrosApp = { start(ctx) {
     });
   }
 
+  // ---------- Quick add: type your own calories and macros ----------
+  $('#quickBtn').addEventListener('click', () => openQuickAdd());
+  function openQuickAdd() {
+    const day = curDay();
+    openSheet(`${sheetHead('Quick add', 'Type the numbers yourself, e.g. from a menu or a label.')}
+      <form id="qaForm" novalidate>
+        <label class="field">Name <span class="hint">Optional</span><input class="input" name="name" placeholder="e.g. Office lunch"></label>
+        <div class="form-grid" style="margin-top:12px">
+          ${MACROS.map(x => `<label class="field qa-${x.cls}"><span><i class="dot-${x.cls}"></i> ${x.label} (g)</span><input class="input" name="${x.k}" type="number" inputmode="decimal" min="0" step="any" placeholder="0"></label>`).join('')}
+          <label class="field">Calories<span class="hint">Worked out for you; change it if your label says otherwise</span><input class="input" name="kcal" type="number" inputmode="decimal" min="0" step="any" placeholder="0"></label>
+        </div>
+        <p class="muted small" id="qaMsg" role="alert" style="min-height:1.2em"></p>
+        <div class="add-row">${mealSelect('qaMeal', defaultMeal())}<button class="btn grow" type="submit">Add to Day ${day.n}</button></div>
+      </form>`);
+    const f = $('#qaForm'); let kcalTyped = false;
+    const n = k => Math.max(0, parseFloat(f.elements[k].value) || 0);
+    const auto = () => { if (!kcalTyped) f.elements.kcal.value = Math.round(n('p') * 4 + n('c') * 4 + n('f') * 9) || ''; };
+    ['p', 'c', 'f'].forEach(k => f.elements[k].addEventListener('input', auto));
+    f.elements.kcal.addEventListener('input', () => { kcalTyped = !!f.elements.kcal.value; if (!kcalTyped) auto(); });
+    f.addEventListener('submit', ev => {
+      ev.preventDefault();
+      const kcal = n('kcal') || n('p') * 4 + n('c') * 4 + n('f') * 9;
+      if (!kcal && !n('fib')) { $('#qaMsg').textContent = 'Enter at least one number.'; return; }
+      const meal = $('#qaMeal').value; const name = String(f.elements.name.value).trim() || 'Quick add';
+      const e = { id: uid(), fid: 'quick', name, amt: 'Quick add', grams: 0, meal, t: Date.now(), quick: true, est: false,
+        kcal: r1(kcal), p: r1(n('p')), c: r1(n('c')), f: r1(n('f')), fib: r1(n('fib')) };
+      day.entries.push(e); settings.lastMeal = meal; pendingMeal = null; saveSettings(); saveDays(); updatePill(); closeSheet();
+      toast(`Added ${name} to Day ${day.n} · ${meal} · ${k0(kcal)} kcal`, { label: 'Undo', run: () => undoLog(day, [e.id]) });
+    });
+  }
+
+  // ---------- Barcode: scan → your saved products → Open Food Facts → type the label once ----------
+  $('#scanBtn').addEventListener('click', () => openScanner());
+  let scanStop = null;
+  const ZXING = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+  const loadScript = src => new Promise((ok, fail) => { const el = document.createElement('script'); el.src = src; el.onload = ok; el.onerror = fail; document.head.appendChild(el); });
+  function openScanner() {
+    openSheet(`${sheetHead('Scan a barcode', 'Point your camera at the barcode on the pack.')}
+      <div class="scan-box"><video id="scanVideo" playsinline muted autoplay></video><div class="scan-frame" aria-hidden="true"></div></div>
+      <p class="muted small" id="scanMsg" aria-live="polite" style="margin:10px 2px 0">Starting the camera…</p>
+      <form id="scanType" class="add-row" novalidate><input class="input" name="code" inputmode="numeric" pattern="[0-9]*" placeholder="Or type the barcode number" style="flex:1" aria-label="Barcode number"><button class="btn" type="submit">Look up</button></form>`);
+    const msg = t => { const m = $('#scanMsg'); if (m) m.textContent = t; };
+    $('#scanType').addEventListener('submit', ev => { ev.preventDefault(); const c = String(ev.target.code.value).replace(/\D/g, ''); if (c.length >= 6) found(c); else msg('Type the full number under the barcode.'); });
+    // Stop the camera whenever the sheet closes
+    const watch = new MutationObserver(() => { if ($('#sheet').hidden || !$('#scanVideo')) stopScan(); });
+    watch.observe($('#sheet'), { attributes: true, attributeFilter: ['hidden'], childList: true });
+    let done = false;
+    const found = code => { if (done) return; done = true; watch.disconnect(); stopScan(); lookupBarcode(code); };
+    startCamera($('#scanVideo'), found).then(ok => { if (ok) msg('Hold steady. It scans by itself.'); })
+      .catch(err => msg(err && err.name === 'NotAllowedError' ? 'Camera blocked. Allow camera access for this site, or type the number below.' : 'Couldn’t start the camera here. Type the number below instead.'));
+  }
+  function stopScan() { if (scanStop) { const s0 = scanStop; scanStop = null; try { s0(); } catch { /* already stopped */ } } }
+  async function startCamera(video, onCode) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('nocam');
+    const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
+    // Phones with a built-in barcode reader (Android Chrome) use it; others (iPhone) load a small scanner library
+    if ('BarcodeDetector' in window && (await window.BarcodeDetector.getSupportedFormats()).includes('ean_13')) {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      video.srcObject = stream; await video.play();
+      const det = new window.BarcodeDetector({ formats }); let on = true;
+      scanStop = () => { on = false; stream.getTracks().forEach(t => t.stop()); };
+      const tick = async () => {
+        if (!on) return;
+        try { const r = await det.detect(video); if (r.length) return onCode(r[0].rawValue); } catch { /* frame not ready */ }
+        setTimeout(tick, 200);
+      };
+      tick(); return true;
+    }
+    if (!window.ZXing) await loadScript(ZXING);
+    const Z = window.ZXing;
+    const hints = new Map([[Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E]]]);
+    const reader = new Z.BrowserMultiFormatReader(hints);
+    scanStop = () => reader.reset();
+    await reader.decodeFromConstraints({ video: { facingMode: 'environment' } }, video, res => { if (res) onCode(res.getText()); });
+    return true;
+  }
+  // "Product · Brand", without repeating a brand that's already in the name
+  const productName = p => { const n = String(p.product_name || '').trim(), b = String(p.brands || '').split(',')[0].trim();
+    return (b && !n.toLowerCase().includes(b.toLowerCase()) ? [n, b].filter(Boolean).join(' · ') : n || b).slice(0, 80); };
+  async function lookupBarcode(code) {
+    // 1. A product you've saved before
+    const mine = custom.find(c => c.barcode === code);
+    if (mine) { toast(`Found ${mine.name}`); return openFood(mine.id); }
+    openSheet(`${sheetHead('Looking it up…', `Barcode ${esc(code)}`)}<p class="muted">Checking Open Food Facts.</p>`);
+    // 2. Open Food Facts (only the barcode number is sent)
+    let p = null;
+    try {
+      const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,brands,nutriments,serving_quantity`);
+      const d = await r.json(); if (d && d.status === 1 && d.product) p = d.product;
+    } catch { /* offline or blocked */ }
+    const nm = p && p.nutriments || {};
+    const num = v => { const x = parseFloat(v); return x >= 0 ? Math.round(x * 10) / 10 : ''; };
+    const kcal = num(nm['energy-kcal_100g']) || (nm.energy_100g ? num(nm.energy_100g / 4.184) : '');
+    const has = p && (kcal !== '' || num(nm.proteins_100g) !== '');
+    const sq = p && parseFloat(p.serving_quantity) > 0 ? Math.round(parseFloat(p.serving_quantity)) : 0;
+    const pre = { barcode: code, name: p ? productName(p) : '',
+      p: has ? num(nm.proteins_100g) : '', c: has ? num(nm.carbohydrates_100g) : '', f: has ? num(nm.fat_100g) : '', fib: has ? num(nm.fiber_100g) : '', kcal: has ? kcal : '' };
+    if (sq) { pre.units = { serving: sq }; pre.d = 'serving'; }
+    // 3. Save it (check or type the label); next scan finds it instantly
+    openCustomForm(pre, {
+      title: has ? 'Check and save' : 'Type the label once',
+      sub: `Barcode ${esc(code)}`,
+      note: has ? 'Found on Open Food Facts. These numbers are added by volunteers, so check them against the label (per 100 g). Once saved, scanning this barcode fills it in instantly.'
+        : p ? 'Found the product but not its nutrition facts. Copy them from the label once; maCros remembers this barcode.'
+        : 'Not found. Copy the nutrition facts from the label once; maCros remembers this barcode for next time.',
+      onSaved: row => { toast(`Saved ${row.name}. Choose how much you had.`); openFood(row.id); },
+    });
+  }
+
   // ---------- Recipe builder (your own sauces, marinades, dishes) ----------
   function openRecipeForm() {
     const foods = items.filter(i => i.kind === 'food');
@@ -762,12 +872,13 @@ window.MacrosApp = { start(ctx) {
   }
 
   // ---------- Custom food form ----------
-  function openCustomForm(pre) {
-    pre = pre || {};
+  function openCustomForm(pre, opts) {
+    pre = pre || {}; opts = opts || {};
     const editing = !!pre.id;
     const servUnit = pre.d && pre.d !== 'g' ? pre.d : '';
     const servG = servUnit && pre.units ? pre.units[servUnit] : '';
-    openSheet(`${sheetHead(editing ? 'Edit ' + esc(pre.name) : 'Add my own food', 'Copy the numbers from a nutrition label or a trusted source. It\'s saved on this device.')}
+    openSheet(`${sheetHead(opts.title || (editing ? 'Edit ' + esc(pre.name) : 'Add my own food'), opts.sub || 'Copy the numbers from a nutrition label or a trusted source.')}
+      ${opts.note ? `<div class="note" style="margin:0 0 12px">${opts.note}</div>` : ''}
       <form id="cfForm" novalidate>
         <div class="form-grid" style="grid-template-columns:1fr">
           <label class="field">Food name *<input class="input" name="name" required value="${esc(pre.name || '')}" placeholder="e.g. Mang Tomas lechon sauce"></label>
@@ -805,6 +916,7 @@ window.MacrosApp = { start(ctx) {
         kcal: +(kcal * k).toFixed(1), p: +(n('p') * k).toFixed(2), c: +(n('c') * k).toFixed(2), f: +(n('f') * k).toFixed(2), fib: +(n('fib') * k).toFixed(2), units, d });
       if (editing) custom = custom.map(c => c.id === row.id ? row : c); else custom.push(row);
       saveCustom(); closeSheet();
+      if (opts.onSaved) return opts.onSaved(row);
       toast(editing ? 'Saved' : `“${name}” added to My Foods`);
       if (viewOpen('add')) { renderFoods(); identify(); }
     });
@@ -1410,6 +1522,7 @@ window.MacrosApp = { start(ctx) {
     { go: '#day', page: 'day', sel: '#waterDash', t: 'Drink water', b: 'Tap the glass after every glass of water. It fills up toward your daily goal.' },
     { go: '#day', page: 'day', sel: '#dayBody [data-act="newday"]', t: 'Start a new day', b: 'When your day ends, tap <b>Start Day</b>. Days never change by themselves at midnight.' },
     { go: '#add', sel: '#askBox', t: 'Type or say what you ate', b: '<i>“2 eggs and 1 cup rice”</i>, <i>“150 g chicken breast”</i>, or by calories: <i>“300 kcal nuggets”</i>. Tap the mic to speak instead.' },
+    { go: '#add', sel: '#view-add .quick-row', t: 'Scan or quick add', b: '<b>Scan barcode</b> on packaged food from the grocery or 7-Eleven. <b>Quick add</b> lets you type calories and macros yourself.' },
     { go: '#add', sel: '#cats', t: 'Browse foods', b: 'Tap <b>Protein</b>, <b>Carbs</b>, <b>Fat</b> or <b>Fiber</b> to see the best sources, or open a category below. Foods marked <b>Estimate</b> are recipe estimates.' },
     { go: '#menu', sel: '#menuBody .menu-list', t: 'The Menu', b: '<b>Goals</b> for your targets and phases, <b>Progress</b> for your results, <b>Tutorial</b> for this tour and your checklist, and <b>Settings</b>.' },
     { go: '#goals', sel: '#maintVal', t: 'Maintenance calories', b: 'What you burn in a normal day. Type your own number any time; your phases are built on it.' },

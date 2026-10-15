@@ -22,7 +22,9 @@ Project notes for Claude Code (and humans). Read this first when picking up the 
 - **Tutorial:** Menu → Tutorial has a guided tour that opens each page and spotlights the real element (`TOUR` steps with selectors; coach overlay) and a first-week checklist that ticks itself where it can (`settings.tour`). The Dashboard offers the tour until it's done or dismissed.
 - **Days are manual.** The user taps "start Day N+1". Never roll over by clock or midnight.
 - **Calculator vs Suggestions:** `foods.js` holds only verified values (USDA FoodData Central `U`, FNRI PhilFCT `F`, label `L`), and only these are auto-matched when typing. `suggestions.js` holds browse-only recipe estimates (`E`) that are never auto-used. New estimates go in `suggestions.js`.
-- Unknown foods are added by the user (custom food / recipe builder). No AI or API lookups, so no token costs.
+- Unknown foods are added by the user (custom food / recipe builder). No AI or API lookups, so no token costs. **One approved exception (2026-10-16): barcode lookups** on Open Food Facts (free, sends only the barcode number; disclosed in privacy.html).
+- **Barcode scanner** (Add → Scan barcode): camera via the built-in BarcodeDetector (Android Chrome) or the ZXing library from jsDelivr (`@zxing/library@0.21.3`, loaded only when scanning). Order: your saved products (`custom[].barcode`) → Open Food Facts → "type the label once". Scanned products are saved as your own foods, so the next scan is instant and offline. Typing the number works when the camera can't.
+- **Quick add** (Add → Quick add): type calories and macros yourself; logged as an entry with `fid: 'quick'` (calories auto = P×4 + C×4 + F×9 unless typed).
 - **Accounts (in progress):** Firebase Auth (Google + email/password) + Firestore. 18+ only. Terms & Privacy list "maCros" as operator, with contact extexodus@gmail.com. The Firestore region must be **asia-southeast1 (Singapore)** because privacy.html says so.
 
 ## Files
@@ -37,7 +39,7 @@ Project notes for Claude Code (and humans). Read this first when picking up the 
 | `foods.js` / `suggestions.js` | Food data, per 100 g. Rows carry reference IDs (FDC / FNRI codes) |
 | `firebase-config.js` | Paste the Firebase web config here (`null` = local-only mode) |
 | `firestore.rules` | Security rules: each user reads and writes only their own docs |
-| `terms.html`, `privacy.html` | Legal pages. Bump `TERMS_VERSION` in boot.js when they change |
+| `terms.html`, `privacy.html` | Legal pages (version 2026-10-16 added barcode scanning). Bump `TERMS_VERSION` in boot.js when they change |
 | `sw.js` | Offline cache. Bump `CACHE` name when the asset list changes |
 | `deploy.sh` | Commit + push `main` + enable Pages (`./deploy.sh "message"`). Needs the `gh` CLI signed in |
 | `tools/` | Scripts used to verify food values (USDA FDC API, FNRI listing parser) |

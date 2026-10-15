@@ -1,6 +1,6 @@
 /* maCros start-up: Terms gate, sign-in, and syncing each account's data with Firestore.
  * Without a Firebase config (firebase-config.js) the app runs in local-only mode. */
-const TERMS_VERSION = '2026-10-15';
+const TERMS_VERSION = '2026-10-16';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const gate = $('#gate'), appEl = $('#app');

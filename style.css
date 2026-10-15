@@ -577,3 +577,15 @@ a { color: var(--accent); }
 .stepper-val:focus-within { border-color: var(--accent); }
 .stepper-val .input { border: 0; padding: 10px 0; flex: 1; text-align: center; font-size: 1.25rem; font-weight: 800; font-variant-numeric: tabular-nums; width: 100%; }
 .stepper-val span { color: var(--muted); font-weight: 600; }
+
+/* ---------- Scan + Quick add ---------- */
+.quick-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 2px 0 10px; }
+.quick-btn { display: flex; align-items: center; justify-content: center; gap: 8px; border: 1.5px solid var(--line); background: var(--surface); color: var(--text); border-radius: 14px; padding: 11px 10px; font-weight: 700; font-size: .92rem; }
+.quick-btn svg { color: var(--accent); }
+.quick-btn:hover { border-color: var(--accent); }
+.qa-p span, .qa-c span, .qa-f span, .qa-fib span { display: inline-flex; align-items: center; gap: 6px; }
+#qaForm .field i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.scan-box { position: relative; border-radius: 16px; overflow: hidden; background: #000; aspect-ratio: 4 / 3; }
+.scan-box video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.scan-frame { position: absolute; left: 12%; right: 12%; top: 32%; bottom: 32%; border: 3px solid rgba(255, 255, 255, .9); border-radius: 12px; box-shadow: 0 0 0 9999px rgba(0, 0, 0, .35); }
+#scanType { margin-top: 12px; }
