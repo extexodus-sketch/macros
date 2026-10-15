@@ -1,6 +1,7 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "macro-id", "runtimeExecutable": "python3", "runtimeArgs": ["-m", "http.server", "8760"], "port": 8760 }
+    { "name": "macro-id", "runtimeExecutable": "python3", "runtimeArgs": ["-m", "http.server", "8760"], "port": 8760 },
+    { "name": "macro-id (Windows)", "runtimeExecutable": "python", "runtimeArgs": ["-m", "http.server", "8760"], "port": 8760 }
   ]
 }
