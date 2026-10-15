@@ -15,7 +15,19 @@ window.MacrosSetup = (() => {
     { k: 'maintain', label: 'Maintain', sub: 'Stay at my current weight', delta: 0, prot: 1.6 },
     { k: 'muscle', label: 'Build muscle', sub: 'Lean gain, little extra fat', delta: 250, prot: 2.0 },
     { k: 'gain', label: 'Gain weight', sub: 'Bulk up faster', delta: 500, prot: 1.8 },
+    // Phase-only goal (not offered in the wizard): maintenance calories with more carbs for training volume
+    { k: 'hyrox', label: 'Hyrox / endurance', sub: 'Fuel hard training', delta: 0, prot: 1.8, fatPct: 0.22, phaseOnly: true },
   ];
+  // Phases a person can switch between; each maps to a goal above (custom keeps whatever numbers you set)
+  const PHASES = [
+    { k: 'bulk', label: 'Bulking', goal: 'gain' },
+    { k: 'lean', label: 'Lean bulk', goal: 'muscle' },
+    { k: 'maintain', label: 'Maintenance', goal: 'maintain' },
+    { k: 'cut', label: 'Cutting', goal: 'lose' },
+    { k: 'hyrox', label: 'Hyrox / endurance', goal: 'hyrox' },
+    { k: 'custom', label: 'Custom', goal: null },
+  ];
+  const phaseForGoal = g => (PHASES.find(x => x.goal === g) || PHASES[2]).k;
   const LB = 0.45359237, IN = 2.54;
   const r = (n, d = 0) => Math.round(n * 10 ** d) / 10 ** d;
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -29,10 +41,8 @@ window.MacrosSetup = (() => {
     const g = goal(p.goal);
     const floor = p.sex === 'm' ? 1500 : 1200;
     const kcal = Math.round(Math.max(floor, tdee + g.delta) / 10) * 10;
-    // Very heavy bodies: base protein on the weight at BMI 27 so the number stays realistic
-    const refKg = Math.min(p.kg, 27 * (p.cm / 100) ** 2);
-    const prot = Math.round(g.prot * refKg);
-    const fat = Math.round(kcal * 0.25 / 9);
+    const prot = Math.round(g.prot * refKg(p));
+    const fat = Math.round(kcal * (g.fatPct || 0.25) / 9);
     const carbs = Math.max(0, Math.round((kcal - prot * 4 - fat * 9) / 4));
     const fib = Math.round(kcal / 1000 * 14);
     const weekly = (kcal - tdee) * 7 / 7700;   // kg per week
@@ -40,6 +50,11 @@ window.MacrosSetup = (() => {
     const weeks = diff && Math.abs(weekly) > 0.05 && Math.sign(diff) === Math.sign(weekly) ? Math.ceil(Math.abs(diff / weekly)) : 0;
     return { bmr: Math.round(bmr), tdee: Math.round(tdee), targets: { kcal, p: prot, c: carbs, f: fat, fib }, weekly, weeks, floored: tdee + g.delta < floor };
   }
+
+  // Very heavy bodies: base protein on the weight at BMI 27 so the number stays realistic
+  function refKg(p) { return Math.min(p.kg, 27 * (p.cm / 100) ** 2); }
+  // Protein per kg and fat share for a goal (used when targets are re-balanced by hand)
+  function rules(goalKey) { const g = goal(goalKey); return { prot: g.prot, fatPct: g.fatPct || 0.25 }; }
 
   function tips(p, res) {
     const t = res.targets, out = [];
@@ -58,6 +73,10 @@ window.MacrosSetup = (() => {
       out.push(`Hit ${t.p} g of protein a day, about ${perMeal} g a meal, spread over 3–4 meals.`);
       out.push('Train each muscle 2 times a week and add a little weight or reps over time.');
       out.push('Sleep 7–9 hours. Muscle is built while you recover.');
+    } else if (p.goal === 'hyrox') {
+      out.push(`Eat about ${res.targets.kcal.toLocaleString()} kcal a day to match your training.`);
+      out.push(`Carbs are your main fuel (${t.c} g a day). Eat some 2–3 hours before hard sessions.`);
+      out.push(`Get ${t.p} g of protein a day to recover between sessions.`);
     } else {
       out.push(`Eat about ${res.targets.kcal.toLocaleString()} kcal a day, about 500 above what you burn, around ${r(res.weekly, 1)} kg gained a week.`);
       out.push('Eat 4–5 times a day. Rice, eggs, peanut butter, milk and banana make calories easier to reach.');
@@ -140,7 +159,7 @@ window.MacrosSetup = (() => {
     }
     function stepGoal() {
       const needT = st.goal && st.goal !== 'maintain';
-      frame('What’s your goal?', '', `${choice('goal', GOALS, st.goal)}
+      frame('What’s your goal?', '', `${choice('goal', GOALS.filter(g => !g.phaseOnly), st.goal)}
         ${needT ? `<label class="field" style="margin-top:14px">Goal weight (${st.wUnit})<span class="hint">You weigh ${showW(st.kg)} ${st.wUnit} now</span>
           <input class="input" id="suTarget" type="number" inputmode="decimal" min="30" max="660" value="${showW(st.targetKg)}" placeholder="${showW(st.goal === 'lose' ? st.kg - 5 : st.kg + 5)}"></label>` : ''}`, 'See my plan');
       const readT = () => { const el = $('#suTarget'); if (el) { const v = parseFloat(el.value); st.targetKg = v > 0 ? toKg(v) : ''; } };
@@ -183,5 +202,5 @@ window.MacrosSetup = (() => {
     return `${p.sex === 'm' ? 'Male' : 'Female'} · ${p.age} y · ${h} · ${w(p.kg)} · ${activity(p.activity).label} · ${goal(p.goal).label}${p.targetKg ? ' → ' + w(p.targetKg) : ''}`;
   }
 
-  return { open, plan, summary };
+  return { open, plan, summary, rules, refKg, PHASES, phaseForGoal, goalLabel: k => goal(k).label };
 })();

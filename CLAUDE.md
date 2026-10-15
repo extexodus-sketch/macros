@@ -10,7 +10,11 @@ Project notes for Claude Code (and humans). Read this first when picking up the 
 - Weights are **cooked, as eaten**. The parser takes "raw" or "uncooked" for raw weights.
 - **Targets come from first-run setup** (`setup.js`): sex, age, height, weight (kg/lb, cm/ft-in), activity, goal (lose / maintain / build muscle / gain) and goal weight → Mifflin-St Jeor × activity ± goal delta, protein per kg, fat 25%, carbs the rest, fiber 14 g/1,000 kcal, plus tailored tips. Everyone sees it once (`settings.setupDone`); Settings → Your goal → Redo setup. No account should start with the owner's numbers.
 - **Look:** "Mint fresh" light palette is the default theme (dark only if chosen in Settings). Macro values show as bordered chips in each macro's colour (P red, C amber, F purple, Fib green).
-- **UI choices:** no example suggestions or "How it works" on Identify (Recent only); explanatory notes live behind a **Reminder** button at the bottom of each page. Each match has a Cooked/Raw switch when a raw/cooked twin exists. My Day says "Current day", the button is just "Start Day N", and the top-right pill toggles eaten ⇄ left. Food categories start collapsed. Silog meals let you edit each part's grams, add +1 piece, and log by plates or grams.
+- **Navigation:** bottom bar is **Today · Add · Menu** (Today opens first). Add = type/speak box on top + "Browse foods" below (hidden while typing), with Protein / Carbs / Fat / Fiber source filters and collapsed categories. Menu → Goals, Progress, Settings.
+- **UI choices:** keep it clean. No example suggestions or "How it works" (Recent only); explanatory notes live behind a **Reminder** button at the bottom of a page. Each match has a Cooked/Raw switch when a twin exists. Today says "Current day", the button is just "Start Day N", the top-right pill toggles eaten ⇄ left, meals have notes (`day.notes[meal]`). Silog meals let you edit each part's grams, add +1 piece, and log by plates or grams.
+- **Calories as an amount:** "532 calories of chicken nuggets" sizes the food by energy (`kcal` unit in engine.js), not grams.
+- **Goals:** daily targets auto-balance with locks: change calories and unlocked macros follow; a macro you type is locked; Auto-calculate resets. **Phases** (Bulking, Lean bulk, Maintenance, Cutting, Hyrox / endurance, Custom) each keep their own targets, calculated from the profile; switching loads them everywhere (`settings.phases`, `settings.phaseId`).
+- **Progress:** last 7 / 30 days: days logged vs skipped, averages vs target from finished days only, estimated weight change (intake − TDEE ÷ 7,700) vs actual weigh-ins, projection after 3+ full days. Weigh-ins (`settings.weighIns`, frequency `settings.weighEvery`) with a "Weigh-in time" banner on Today when due.
 - **Days are manual.** The user taps "start Day N+1". Never roll over by clock or midnight.
 - **Calculator vs Suggestions:** `foods.js` holds only verified values (USDA FoodData Central `U`, FNRI PhilFCT `F`, label `L`), and only these are auto-matched when typing. `suggestions.js` holds browse-only recipe estimates (`E`) that are never auto-used. New estimates go in `suggestions.js`.
 - Unknown foods are added by the user (custom food / recipe builder). No AI or API lookups, so no token costs.
@@ -23,7 +27,7 @@ Project notes for Claude Code (and humans). Read this first when picking up the 
 | `boot.js` | Start-up: Terms gate, sign-in screens, cloud sync. Local-only mode when there's no Firebase config |
 | `cloud.js` | Firebase SDK wrapper (gstatic CDN, v10.12.2): auth, `users/{uid}` profile, `users/{uid}/days/{id}` |
 | `app.js` | UI: Identify, My Day, Foods (Database / Suggestions / My Eats), Settings. `MacrosApp.start(ctx)` |
-| `setup.js` | First-run setup wizard and target maths (`MacrosSetup.open / plan / summary`) |
+| `setup.js` | First-run setup wizard, target maths and phase types (`MacrosSetup.open / plan / summary / rules / PHASES`) |
 | `engine.js` | Parser (English/Tagalog, spoken numbers, units, 90%/80-20), fuzzy search, macro math |
 | `foods.js` / `suggestions.js` | Food data, per 100 g. Rows carry reference IDs (FDC / FNRI codes) |
 | `firebase-config.js` | Paste the Firebase web config here (`null` = local-only mode) |

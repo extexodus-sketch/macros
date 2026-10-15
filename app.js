@@ -109,29 +109,31 @@ window.MacrosApp = { start(ctx) {
   function openReminder(page) {
     const verified = E.all().filter(f => !f.sugg).length;
     const body = {
-      identify: `<ol class="steps">
-          <li><b class="n">1</b><div><b>Type or tap the mic</b> and say what you ate, with amounts: <span class="muted">“150 grams lean ground pork and one cup of rice”</span>. English, Tagalog or Taglish all work.</div></li>
-          <li><b class="n">2</b><div><b>Check the matches.</b> Fix any amount, switch between cooked and raw, or pick a different food. No amount? It assumes 1 normal serving and tells you.</div></li>
-          <li><b class="n">3</b><div><b>Add to your day</b> for a running total. Made your own sauce? Type its ingredients and tap <b>Save as recipe</b>.</div></li>
-        </ol>
-        <p class="muted small" style="margin:14px 0 0">Weights are <b>cooked, as eaten</b> unless you pick raw. Calculations use only USDA, FNRI and label values (${verified} foods). Estimates sit separately in Foods → Suggestions.</p>`,
       day: `<ul class="legend-list"><li>Days only change when you tap <b>Start Day ${curDay().n + 1}</b>, never at midnight.</li>
           <li>Tap the calories at the top right to switch between what you’ve eaten and what’s left.</li>
           <li>You can go back to past days with the arrows and still edit them.</li>
-          <li>Your targets come from your setup. Change them any time in Settings.</li></ul>`,
-      foods: `<ul class="legend-list"><li><b>Database:</b> verified values (USDA, FNRI, labels), plus your own foods and recipes. Typing on Identify matches against these.</li>
+          <li>Your targets come from your setup and current phase. Change them in Menu → Goals.</li>
+          <li>Tap the note icon next to a meal to write down how it went.</li></ul>`,
+      add: `<ol class="steps">
+          <li><b class="n">1</b><div><b>Type or tap the mic</b> and say what you ate, with amounts: <span class="muted">“150 grams lean ground pork and one cup of rice”</span>, or by calories: <span class="muted">“532 calories of chicken nuggets”</span>. English, Tagalog or Taglish all work.</div></li>
+          <li><b class="n">2</b><div><b>Check the matches.</b> Fix any amount, switch between cooked and raw, or pick a different food. No amount? It assumes 1 normal serving and tells you.</div></li>
+          <li><b class="n">3</b><div><b>Add to your day</b> for a running total. Made your own sauce? Type its ingredients and tap <b>Save as recipe</b>.</div></li>
+        </ol>
+        <p class="muted small" style="margin:14px 0 0">Weights are <b>cooked, as eaten</b> unless you pick raw. Calculations use only USDA, FNRI and label values (${verified} foods). Estimates sit separately in Suggestions.</p>
+        <h3 class="section-title">Browse foods</h3>
+        <ul class="legend-list">          <li><b>Database:</b> verified values (USDA, FNRI, labels), plus your own foods and recipes. Typing matches against these.</li>
           <li><b>Suggestions:</b> recipe-based estimates with no official lab value. They’re never used on their own; tap one to use it on purpose.</li>
           <li><b>My Eats:</b> everything you’ve logged, most recent first. Tap one to log the same amount again.</li>
-          <li>Tap a category name to open or close it.</li></ul>`,
+          <li>Tap a category name to open or close it. Tap <b>Protein</b>, <b>Carbs</b>, <b>Fat</b> or <b>Fiber</b> to see the best sources of each.</li></ul>`,
     }[page];
     openSheet(`${sheetHead('Reminder')}${body}`);
   }
   document.addEventListener('click', e => { const b = e.target.closest('[data-reminder]'); if (b) openReminder(b.dataset.reminder); });
 
   const mealSelect = (id, sel) => `<select class="select" id="${id}" aria-label="Meal">${MEALS.map(m => `<option${m === sel ? ' selected' : ''}>${m}</option>`).join('')}</select>`;
-  const unitOptions = (food, unit) => E.unitsFor(food).map(u => `<option value="${u.key}"${u.key === unit ? ' selected' : ''}>${u.key === 'g' ? 'grams' : esc(E.unitLabel(u.key, 1)) + ' (' + fmt(u.grams, 0) + ' g)'}</option>`).join('')
+  const unitOptions = (food, unit) => E.unitsFor(food).map(u => `<option value="${u.key}"${u.key === unit ? ' selected' : ''}>${u.key === 'g' ? 'grams' : u.key === 'kcal' ? 'calories (kcal)' : esc(E.unitLabel(u.key, 1)) + ' (' + fmt(u.grams, 0) + ' g)'}</option>`).join('')
     + (unit && !food.units[unit] && unit !== 'g' ? `<option value="${unit}" selected>${esc(E.unitLabel(unit, 1))}</option>` : '');
-  const amtLabel = (food, qty, unit, grams) => unit === 'g' ? `${fmt(grams, 0)} g` : `${E.amountText(food, qty, unit)} · ${fmt(grams, 0)} g`;
+  const amtLabel = (food, qty, unit, grams) => unit === 'g' ? `${fmt(grams, 0)} g` : unit === 'kcal' ? `${fmt(grams, 0)} g (${k0(qty)} kcal)` : `${E.amountText(food, qty, unit)} · ${fmt(grams, 0)} g`;
 
   // Log foods into the current day. list: [{food, qty, unit, grams}]
   function logToDay(list, meal) {
@@ -146,20 +148,27 @@ window.MacrosApp = { start(ctx) {
     settings.lastMeal = meal; saveSettings(); saveDays(); store.set('recent', recent); updatePill();
     return { added, kc, day };
   }
-  function undoLog(day, ids) { day.entries = day.entries.filter(e => !ids.includes(e.id)); saveDays(); updatePill(); if (!$('#view-day').hidden) renderDay(); }
+  function undoLog(day, ids) { day.entries = day.entries.filter(e => !ids.includes(e.id)); saveDays(); updatePill(); if (viewOpen('day')) renderDay(); }
 
   // ---------- Routing ----------
-  const TABS = ['identify', 'day', 'foods', 'settings'];
+  // Bottom bar: Today · Add · Menu. Goals, Progress and Settings open from Menu.
+  const TABS = ['day', 'add', 'menu', 'goals', 'progress', 'settings'];
+  const OLD_TABS = { today: 'day', identify: 'add', foods: 'add' };
   function route() {
-    let tab = location.hash.slice(1); if (tab === 'today') tab = 'day';
-    if (!TABS.includes(tab)) tab = 'identify';
+    let tab = location.hash.slice(1); tab = OLD_TABS[tab] || tab;
+    if (!TABS.includes(tab)) tab = 'day';
     TABS.forEach(t => { $('#view-' + t).hidden = t !== tab; });
-    $$('.tabbar a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
+    const navTab = ['goals', 'progress', 'settings'].includes(tab) ? 'menu' : tab;
+    $$('.tabbar a').forEach(a => a.classList.toggle('on', a.dataset.tab === navTab));
     if (tab === 'day') { viewIdx = days.length - 1; renderDay(); }
-    if (tab === 'foods') renderFoods();
+    if (tab === 'add') renderFoods();
+    if (tab === 'menu') renderMenu();
+    if (tab === 'goals') renderGoals();
+    if (tab === 'progress') renderProgress();
     if (tab === 'settings') renderSettings();
     window.scrollTo(0, 0);
   }
+  const viewOpen = t => !$('#view-' + t).hidden;
   window.addEventListener('hashchange', route);
   // Top-right pill: tap to switch between calories eaten and calories left
   function updatePill() {
@@ -193,6 +202,7 @@ window.MacrosApp = { start(ctx) {
 
   function renderResults() {
     const box = $('#results');
+    $('#browse').hidden = !!q.value.trim();
     if (!q.value.trim()) { box.innerHTML = emptyState(); return; }
     if (!items.length) { box.innerHTML = '<p class="muted" style="margin:18px 4px">Keep typing — add the food name.</p>'; return; }
     const foods = items.filter(i => i.kind === 'food');
@@ -250,7 +260,7 @@ window.MacrosApp = { start(ctx) {
     if (it.note === 'default') notes.push(`No amount given, so it assumed ${E.amountText(it.food, it.qty, it.unit)}. Change it above.`);
     if (it.note === 'approx') notes.push(`There's no standard “${E.unitLabel(it.unit, 1)}” size for this food, so this is estimated. Switch to grams for accuracy.`);
     if (it.food.sugg && !it.parent) notes.push('Estimate from Suggestions (no lab value). It can be off by ±15–20%.');
-    const alts = it.alts && it.alts.length ? `<select class="select alt" aria-label="Pick a different food"><option value="">Not it? Pick another…</option>${it.alts.map(f => `<option value="${esc(f.id)}">${esc(f.name)}</option>`).join('')}<option value="__search">Search all foods…</option></select>` : '';
+    const alts = it.alts && it.alts.length ? `<select class="select alt" aria-label="Pick a different food"><option value="">Not it? Pick another…</option>${it.alts.map(f => `<option value="${esc(f.id)}">${esc(f.name)}</option>`).join('')}<option value="__search">Search all foods…</option></select>` : `<button class="linkish small-link" type="button" data-act="find">Not it? Search all foods</button>`;
     return `<div class="card item" data-i="${i}">
       <div class="item-head">
         <div class="item-name">${esc(it.food.name)} ${badge(it.food)}${it.parent ? `<span class="parent-tag">${esc(it.parent)}</span>` : ''}</div>
@@ -264,7 +274,7 @@ window.MacrosApp = { start(ctx) {
         ${stateToggle(it.food)}
       </div>
       <div class="item-macros" data-k="macros">${itemMacrosHtml(m)}</div>
-      ${alts ? `<div class="item-foot"><span>You typed “${esc(it.query)}”</span>${alts}</div>` : ''}
+      <div class="item-foot"><span>You typed “${esc(it.query)}”</span>${alts}</div>
       ${notes.map(n => `<div class="note">${esc(n)}</div>`).join('')}
     </div>`;
   }
@@ -289,13 +299,13 @@ window.MacrosApp = { start(ctx) {
     const i = +card.dataset.i; const it = items[i];
     if (e.target.matches('.unit')) {
       const nu = e.target.value;
-      if (nu === 'g') it.qty = Math.round(it.grams); else if (it.unit === 'g') it.qty = 1;
+      if (nu === 'g') it.qty = Math.round(it.grams); else if (nu === 'kcal') it.qty = Math.round(E.macros(it.food, it.grams).kcal); else if (it.unit === 'g' || it.unit === 'kcal') it.qty = 1;
       it.unit = nu; const a = E.amount(it.food, it.qty, nu); it.grams = a.grams; it.note = a.note;
       renderResults();
     }
     if (e.target.matches('.alt')) {
       const id = e.target.value; if (!id) return;
-      if (id === '__search') { location.hash = '#foods'; $('#foodSearch').value = it.query; renderFoods(); return; }
+      if (id === '__search') { e.target.value = ''; openPicker(i); return; }
       const f = E.byId(id); const keepUnit = it.unit === 'g' || f.units[it.unit] || E.MASS[it.unit];
       const a = keepUnit ? E.amount(f, it.qty, it.unit) : E.amount(f, Math.round(it.grams), 'g');
       const oldAlts = it.alts.filter(x => x !== f); oldAlts.unshift(it.food);
@@ -320,7 +330,8 @@ window.MacrosApp = { start(ctx) {
       renderResults();
     }
     if (act === 'pick') {
-      const f = E.byId(b.dataset.id); const n = (it.qty || 1) * (it.mult || 1);
+      const f = E.byId(b.dataset.id);
+      const n = it.unit === 'kcal' && f.parts ? it.qty / (f.comboTotal.kcal || 1) : (it.qty || 1) * (it.mult || 1);
       if (f.parts) items.splice(i, 1, ...E.expandCombo(f, n));
       else {
         const a = E.amount(f, it.qty, it.unit, it.size || 1);
@@ -329,6 +340,7 @@ window.MacrosApp = { start(ctx) {
       renderResults();
     }
     if (act === 'custom') openCustomForm({ name: it.query });
+    if (act === 'find') openPicker(i);
   });
 
   function emptyState() {
@@ -336,7 +348,6 @@ window.MacrosApp = { start(ctx) {
     return `<div class="empty">
       ${rec.length ? `<h3 class="section-title">Recent — tap to add</h3><div class="chips">${rec.map(f => `<button class="chip" type="button" data-act="recent" data-id="${esc(f.id)}">${esc(f.name)}</button>`).join('')}</div>`
         : '<p class="muted" style="margin:18px 4px">Foods you add will show up here so you can tap them next time.</p>'}
-      ${reminderBtn('identify')}
     </div>`;
   }
 
@@ -408,20 +419,25 @@ window.MacrosApp = { start(ctx) {
           <div class="bar"><span class="dot-${x.cls}" style="width:${pct}%"></span></div></div>`;
       }).join('')}
     </div></div>
-    <p class="muted small" style="margin:12px 0 0">${entries.length ? (left >= 0 ? `<b>${k0(left)} kcal</b> left to reach your target.` : `<b>${k0(-left)} kcal</b> over your target.`) + ` Protein to go: <b>${fmt(Math.max(T.p - tot.p, 0), 0)} g</b>.` : `Target: ${k0(T.kcal)} kcal · ${fmt(T.p, 0)} g protein. Change it in Settings.`}</p></div>`;
+    <p class="muted small" style="margin:12px 0 0">${entries.length ? (left >= 0 ? `<b>${k0(left)} kcal</b> left to reach your target.` : `<b>${k0(-left)} kcal</b> over your target.`) + ` Protein to go: <b>${fmt(Math.max(T.p - tot.p, 0), 0)} g</b>.` : `Target: ${k0(T.kcal)} kcal · ${fmt(T.p, 0)} g protein${activePhase() ? ` (${esc(activePhase().name)})` : ''}. Change it in Menu → Goals.`}</p></div>`;
+    if (isCur && weighDue().due) html = `<a class="due-banner" href="#progress"><span><b>Weigh-in time</b> · log your weight to keep your estimate on track</span><span aria-hidden="true">&#8250;</span></a>` + html;
 
+    const notes = day.notes || {};
     if (!entries.length) {
       html += `<div class="card" style="text-align:center;margin-top:12px"><p style="margin:4px 0 12px">Nothing logged on Day ${day.n} yet.</p>
-        ${isCur ? '<a class="btn" href="#identify">Identify a food</a>' : ''}</div>`;
-    } else {
+        ${isCur ? '<a class="btn" href="#add">Add food</a>' : ''}</div>`;
+    }
+    {
       for (const meal of MEALS) {
-        const list = entries.filter(e => e.meal === meal); if (!list.length) continue;
+        const list = entries.filter(e => e.meal === meal); if (!list.length && !notes[meal]) continue;
         const mt = E.sumMacros(list);
-        html += `<div class="meal-head"><h2>${meal}</h2><span>${k0(mt.kcal)} kcal · P ${fmt(mt.p, 0)} · C ${fmt(mt.c, 0)} · F ${fmt(mt.f, 0)}</span></div>
-          <div class="card">${list.map(e => `<div class="entry" data-id="${esc(e.id)}">
+        html += `<div class="meal-head"><h2>${meal}</h2><span>${list.length ? `${k0(mt.kcal)} kcal · P ${fmt(mt.p, 0)} · C ${fmt(mt.c, 0)} · F ${fmt(mt.f, 0)}` : ''}</span>
+            <button class="note-btn${notes[meal] ? ' has' : ''}" type="button" data-act="note" data-meal="${meal}" aria-label="${notes[meal] ? 'View' : 'Add'} ${meal.toLowerCase()} note">${NOTE_ICON}</button></div>
+          ${notes[meal] ? `<button class="meal-note" type="button" data-act="note" data-meal="${meal}">${esc(notes[meal])}</button>` : ''}
+          ${list.length ? `<div class="card">${list.map(e => `<div class="entry" data-id="${esc(e.id)}">
             <div class="e-main"><div class="e-name">${esc(e.name)}${e.est ? ' <span class="badge E">Estimate</span>' : ''}</div><div class="e-sub">${esc(e.amt)}</div>${mchips(e, false)}</div>
             <div class="e-kcal">${k0(e.kcal)}</div>
-            <button class="remove" type="button" data-act="del" aria-label="Delete ${esc(e.name)}">&times;</button></div>`).join('')}</div>`;
+            <button class="remove" type="button" data-act="del" aria-label="Delete ${esc(e.name)}">&times;</button></div>`).join('')}</div>` : ''}`;
       }
     }
     html += `<div class="today-actions">
@@ -447,13 +463,33 @@ window.MacrosApp = { start(ctx) {
       toast(`Day ${cur.n + 1} started`, { label: 'Undo', run: () => { if (curDay().entries.length) return; days.pop(); saveDays(); viewIdx = days.length - 1; updatePill(); renderDay(); } });
     }
     if (b.dataset.act === 'gocur') { viewIdx = days.length - 1; renderDay(); }
+    if (b.dataset.act === 'note') openNote(day, b.dataset.meal);
     if (b.dataset.act === 'copy') {
       const t = E.sumMacros(day.entries);
       const lines = [`Day ${day.n} (${when(day.start)}): ${k0(t.kcal)} kcal · P ${fmt(t.p, 0)}g · C ${fmt(t.c, 0)}g · F ${fmt(t.f, 0)}g · Fiber ${fmt(t.fib, 0)}g`];
-      for (const meal of MEALS) { const l = day.entries.filter(x => x.meal === meal); if (!l.length) continue; lines.push('', meal + ':'); l.forEach(x => lines.push(`- ${x.name}, ${x.amt}: ${k0(x.kcal)} kcal, P ${fmt(x.p)} C ${fmt(x.c)} F ${fmt(x.f)}`)); }
+      for (const meal of MEALS) {
+        const l = day.entries.filter(x => x.meal === meal); const note = (day.notes || {})[meal]; if (!l.length && !note) continue;
+        lines.push('', meal + ':'); l.forEach(x => lines.push(`- ${x.name}, ${x.amt}: ${k0(x.kcal)} kcal, P ${fmt(x.p)} C ${fmt(x.c)} F ${fmt(x.f)}`));
+        if (note) lines.push(`Note: ${note}`);
+      }
       copyText(lines.join('\n'));
     }
   });
+  // Meal notes: how a meal went, what you felt, where you ate
+  const NOTE_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M6 3h9l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm8 1.5V9h4.5L14 4.5ZM8 12a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2H8Zm0 4a1 1 0 1 0 0 2h5a1 1 0 1 0 0-2H8Z"/></svg>';
+  function openNote(day, meal) {
+    const cur = (day.notes || {})[meal] || '';
+    openSheet(`${sheetHead(`${meal} note`, `Day ${day.n}`)}
+      <textarea class="input note-text" id="noteText" rows="5" placeholder="How was it? Where did you eat, how did you feel, anything to remember…">${esc(cur)}</textarea>
+      <div class="add-row"><button class="btn grow" type="button" id="noteSave">Save note</button>${cur ? '<button class="btn danger" type="button" id="noteDel">Delete</button>' : ''}</div>`);
+    const save = txt => {
+      day.notes = Object.assign({}, day.notes); if (txt) day.notes[meal] = txt; else delete day.notes[meal];
+      saveDays(); closeSheet(); renderDay();
+    };
+    $('#noteSave').onclick = () => save($('#noteText').value.trim());
+    if (cur) $('#noteDel').onclick = () => { if (confirm(`Delete the ${meal.toLowerCase()} note?`)) save(''); };
+  }
+
   function copyText(t) {
     if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(t).then(() => toast('Copied to clipboard'), () => fallbackCopy(t));
     else fallbackCopy(t);
@@ -467,11 +503,15 @@ window.MacrosApp = { start(ctx) {
     'Eggs & Tofu', 'Soups', 'Vegetables', 'Root Crops & Beans', 'Fruits', 'Nuts & Spreads', 'Dairy', 'Drinks', 'Snacks & Street Food',
     'Desserts & Kakanin', 'Fast Food', 'Condiments & Fats', 'Supplements'];
   const MODES = { db: 'Database', sugg: 'Suggestions', eats: 'My Eats' };
-  let foodCat = 'All', foodMode = 'db', foodT;
+  let foodSrc = 'all', foodMode = 'db', foodT;
+  // "Sources": foods where that macro carries most of the calories (fiber: at least 3 g per 100 g)
+  const SRC = [['all', 'All'], ['p', 'Protein'], ['c', 'Carbs'], ['f', 'Fat'], ['fib', 'Fiber']];
+  const isSource = (f, k) => !f.parts && f.kcal > 0 && (k === 'p' ? f.p * 4 / f.kcal >= 0.35 && f.p >= 8
+    : k === 'c' ? f.c * 4 / f.kcal >= 0.6 && f.c >= 15 : k === 'f' ? f.f * 9 / f.kcal >= 0.6 && f.f >= 10 : f.fib >= 3);
   const openCats = new Set();   // categories opened in the "All" list (all start closed)
   $('#foodSearch').addEventListener('input', () => { clearTimeout(foodT); foodT = setTimeout(renderFoodList, 120); });
-  $('#cats').addEventListener('click', e => { const b = e.target.closest('[data-cat]'); if (!b) return; foodCat = b.dataset.cat; renderFoods(); });
-  $('#foodModes').addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (!b) return; foodMode = b.dataset.mode; foodCat = 'All'; renderFoods(); });
+  $('#cats').addEventListener('click', e => { const b = e.target.closest('[data-src]'); if (!b) return; foodSrc = b.dataset.src; renderFoods(); });
+  $('#foodModes').addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (!b) return; foodMode = b.dataset.mode; foodSrc = 'all'; renderFoods(); });
   $('#addCustomBtn').addEventListener('click', () => openCustomForm({}));
   $('#foodList').addEventListener('click', e => {
     const h = e.target.closest('[data-toggle-cat]');
@@ -488,19 +528,17 @@ window.MacrosApp = { start(ctx) {
 
   function renderFoods() {
     $('#foodModes').innerHTML = Object.entries(MODES).map(([k, l]) => `<button type="button" role="tab" aria-selected="${k === foodMode}" class="${k === foodMode ? 'on' : ''}" data-mode="${k}">${l}</button>`).join('');
-    const present = new Set(E.all().filter(inMode).map(f => f.cat));
     $('#cats').hidden = foodMode === 'eats';
-    $('#cats').innerHTML = CATS.filter(c => c === 'All' || present.has(c)).map(c => `<button class="chip${c === foodCat ? ' on' : ''}" type="button" role="tab" aria-selected="${c === foodCat}" data-cat="${esc(c)}">${esc(c)}</button>`).join('');
-    $('#foodSearch').placeholder = foodMode === 'eats' ? 'Search what you’ve eaten…' : foodMode === 'sugg' ? 'Search estimates (adobo, sinigang…)' : 'Search foods (chicken, kanin, whey…)';
-    $('#modeNote').hidden = true;
-    $('#foodsFoot').innerHTML = reminderBtn('foods');
+    $('#cats').innerHTML = SRC.map(([k, l]) => `<button class="chip src-${k}${k === foodSrc ? ' on' : ''}" type="button" role="tab" aria-selected="${k === foodSrc}" data-src="${k}">${l}</button>`).join('');
+    $('#foodSearch').placeholder = foodMode === 'eats' ? 'Search what you’ve eaten…' : foodMode === 'sugg' ? 'Search estimates (adobo, sinigang…)' : 'Search the list (chicken, kanin, whey…)';
+    $('#foodsFoot').innerHTML = reminderBtn('add');
     renderFoodList();
   }
   function foodRow(f) {
     const def = f.parts ? { qty: 1, unit: 'plate', grams: f.comboGrams } : E.amount(f, null, null);
     const m = E.macros(f, def.grams);
-    const per = f.parts ? `${f.parts.length} parts · P ${fmt(m.p, 0)} · C ${fmt(m.c, 0)} · F ${fmt(m.f, 0)}` : `per 100 g: ${k0(f.kcal)} kcal · P ${fmt(f.p)} · C ${fmt(f.c)} · F ${fmt(f.f)} · Fib ${fmt(f.fib)}`;
-    return `<button class="food-row" type="button" data-id="${esc(f.id)}"><div class="fr-main"><div class="fr-name">${esc(f.name)} ${badge(f)}</div><div class="fr-sub">${per}</div></div>
+    const per = f.parts ? `${f.parts.length} parts · per plate` : `per 100 g · ${k0(f.kcal)} kcal`;
+    return `<button class="food-row" type="button" data-id="${esc(f.id)}"><div class="fr-main"><div class="fr-name">${esc(f.name)} ${badge(f)}</div><div class="fr-sub">${per}</div>${mchips(f.parts ? m : f, false)}</div>
       <div class="fr-kcal">${k0(m.kcal)}<small>${f.parts ? '1 plate' : esc(E.amountText(f, def.qty, def.unit))}</small></div></button>`;
   }
   // My Eats: every distinct food + amount you've logged, newest first
@@ -528,14 +566,16 @@ window.MacrosApp = { start(ctx) {
     let foods;
     if (term) foods = E.search(term, { prefix: true, limit: 60, scope: foodMode === 'sugg' ? 'sugg' : 'calc' }).map(r => r.food);
     else foods = E.all().filter(inMode);
-    foods = foods.filter(f => foodCat === 'All' || f.cat === foodCat);
-    $('#foodCount').textContent = term ? `${foods.length} match${foods.length === 1 ? '' : 'es'} for “${term}”` : `${foods.length} foods${foodCat === 'All' ? '' : ' in ' + foodCat}`;
+    const srcLabel = foodSrc === 'all' ? '' : SRC.find(x => x[0] === foodSrc)[1].toLowerCase();
+    if (foodSrc !== 'all') foods = foods.filter(f => isSource(f, foodSrc)).sort((a, b) => b[foodSrc] - a[foodSrc]);
+    $('#foodCount').textContent = (term ? `${foods.length} match${foods.length === 1 ? '' : 'es'} for “${term}”` : `${foods.length} foods`)
+      + (srcLabel ? ` · best ${srcLabel} sources first (per 100 g)` : '');
     if (!foods.length) {
-      list.innerHTML = `<div style="padding:18px;text-align:center"><p style="margin:0 0 12px">No food matches “${esc(term)}”.</p><button class="btn small" type="button" id="addFromSearch">+ Add it as my food</button></div>`;
+      list.innerHTML = `<div style="padding:18px;text-align:center"><p style="margin:0 0 12px">No food matches${term ? ` “${esc(term)}”` : ''}.</p><button class="btn small" type="button" id="addFromSearch">+ Add it as my food</button></div>`;
       $('#addFromSearch').onclick = () => openCustomForm({ name: term });
       return;
     }
-    if (!term && foodCat === 'All') {
+    if (!term && foodSrc === 'all') {
       const groups = {}; foods.forEach(f => (groups[f.cat] = groups[f.cat] || []).push(f));
       list.innerHTML = CATS.filter(c => groups[c]).map(c => `<button class="cat-head" type="button" data-toggle-cat="${esc(c)}" aria-expanded="${openCats.has(c)}">
           <span>${esc(c)}</span><span class="cat-count">${groups[c].length}<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M6.3 9.3a1 1 0 0 1 1.4 0L12 13.6l4.3-4.3a1 1 0 1 1 1.4 1.4l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 0 1 0-1.4Z"/></svg></span></button>
@@ -584,13 +624,13 @@ window.MacrosApp = { start(ctx) {
     };
     calc();
     $('#fdQty').addEventListener('input', calc);
-    $('#fdUnit').addEventListener('change', () => { $('#fdQty').value = $('#fdUnit').value === 'g' ? Math.round(E.gramsFor(f, def.qty, def.unit)) : 1; calc(); });
+    $('#fdUnit').addEventListener('change', () => { const u = $('#fdUnit').value, g0 = E.gramsFor(f, def.qty, def.unit); $('#fdQty').value = u === 'g' ? Math.round(g0) : u === 'kcal' ? Math.round(E.macros(f, g0).kcal) : 1; calc(); });
     $('#fdAdd').onclick = () => {
       const { qty, unit, g } = calc(); if (!g) return toast('Enter an amount first.');
       const meal = $('#fdMeal').value; const { added, kc, day } = logToDay([{ food: f, qty, unit, grams: g }], meal); closeSheet();
       toast(`Added to Day ${day.n} · ${meal} · ${k0(kc)} kcal`, { label: 'Undo', run: () => undoLog(day, added) });
     };
-    $('#fdUse').onclick = () => { const { qty, unit } = calc(); closeSheet(); location.hash = '#identify'; appendQuery(`${E.amountText(f, qty, unit)} ${f.key}`); };
+    $('#fdUse').onclick = () => { const { qty, unit } = calc(); closeSheet(); location.hash = '#add'; appendQuery(`${E.amountText(f, qty, unit)} ${f.key}`); };
     if (f.custom) {
       $('#fdEdit').onclick = () => openCustomForm(custom.find(c => c.id === f.id));
       $('#fdDel').onclick = () => {
@@ -650,7 +690,7 @@ window.MacrosApp = { start(ctx) {
       const { added, kc, day } = logToDay(asItems(n), meal); closeSheet();
       toast(`Added to Day ${day.n} · ${meal} · ${k0(kc)} kcal`, { label: 'Undo', run: () => undoLog(day, added) });
     };
-    $('#cbUse').onclick = () => { const n = calc(); closeSheet(); location.hash = '#identify'; items = asItems(n); q.value = `${fmt(n, 2)} ${f.key}`; autosize(); renderResults(); };
+    $('#cbUse').onclick = () => { const n = calc(); closeSheet(); location.hash = '#add'; items = asItems(n); q.value = `${fmt(n, 2)} ${f.key}`; autosize(); renderResults(); };
   }
   function openEat(key) {
     const x = myEats().find(e => e.key === key); if (!x) return;
@@ -666,7 +706,29 @@ window.MacrosApp = { start(ctx) {
       day.entries.push(copy); settings.lastMeal = meal; saveSettings(); saveDays(); updatePill(); closeSheet();
       toast(`Logged ${e.name} to Day ${day.n} · ${k0(e.kcal)} kcal`, { label: 'Undo', run: () => undoLog(day, [copy.id]) });
     };
-    if (f) $('#eatUse').onclick = () => { closeSheet(); location.hash = '#identify'; appendQuery(`${fmt(e.grams, 0)}g ${f.key}`); };
+    if (f) $('#eatUse').onclick = () => { closeSheet(); location.hash = '#add'; appendQuery(`${fmt(e.grams, 0)}g ${f.key}`); };
+  }
+
+  // Swap one matched item for any food, keeping its weight
+  function openPicker(i) {
+    const it = items[i]; if (!it) return;
+    openSheet(`${sheetHead('Pick a food', `Replaces “${esc(it.query)}” and keeps the amount`)}
+      <div class="search-box" style="margin-top:0"><input id="pkSearch" type="search" placeholder="Search all foods" autocomplete="off" value="${esc(it.query)}"></div>
+      <div class="food-list" id="pkList" style="margin-top:10px"></div>`);
+    const list = () => {
+      const term = $('#pkSearch').value.trim();
+      const found = term ? E.search(term, { prefix: true, limit: 30, scope: 'calc' }).map(r => r.food).filter(f => !f.parts) : [];
+      $('#pkList').innerHTML = found.length ? found.map(foodRow).join('') : `<p class="muted" style="padding:14px;margin:0">${term ? 'No matches.' : 'Type a food name.'}</p>`;
+    };
+    list();
+    $('#pkSearch').addEventListener('input', list);
+    $('#pkList').addEventListener('click', e => {
+      const b = e.target.closest('[data-id]'); if (!b) return;
+      const f = E.byId(b.dataset.id); const grams = it.kind === 'food' ? it.grams : null;
+      const a = grams ? E.amount(f, Math.round(grams), 'g') : E.amount(f, it.qty, it.unit, it.size || 1);
+      items[i] = { kind: 'food', food: f, qty: a.qty, unit: a.unit, grams: a.grams, note: a.note, query: it.query, alts: [] };
+      closeSheet(); renderResults();
+    });
   }
 
   // ---------- Recipe builder (your own sauces, marinades, dishes) ----------
@@ -750,8 +812,7 @@ window.MacrosApp = { start(ctx) {
       if (editing) custom = custom.map(c => c.id === row.id ? row : c); else custom.push(row);
       saveCustom(); closeSheet();
       toast(editing ? 'Saved' : `“${name}” added to My Foods`);
-      if (!$('#view-foods').hidden) renderFoods();
-      if (!$('#view-identify').hidden) identify();
+      if (viewOpen('add')) { renderFoods(); identify(); }
     });
   }
 
@@ -759,28 +820,17 @@ window.MacrosApp = { start(ctx) {
   // SETTINGS
   // ==========================================================
   function renderSettings() {
-    const T = settings.targets;
     $('#settingsBody').innerHTML = `
       ${acct ? `<div class="card settings-card"><h2>Account</h2>
         <p class="muted small" style="margin:0">Signed in as <b>${esc(acct.email)}</b>${acct.provider === 'google.com' ? ' with Google' : ''}. Your days, recipes and foods are saved to your account and sync across your devices.</p>
         <div class="row-actions"><button class="btn ghost small" type="button" id="signOutBtn">Sign out</button></div></div>` : ''}
-      <div class="card settings-card"><h2>Your goal</h2>
-        <p class="muted small" style="margin:0">${settings.profile ? esc(window.MacrosSetup.summary(settings.profile)) : 'Not set up yet.'}</p>
-        <div class="row-actions"><button class="btn small outline" type="button" id="redoSetupBtn">Redo setup</button></div>
-        <p class="muted small" style="margin:10px 0 0">Redo it when your weight, activity or goal changes. It replaces the targets below.</p></div>
-      <div class="card settings-card"><h2>Daily targets</h2>
-        <div class="form-grid">
-          ${[['kcal', 'Calories'], ['p', 'Protein (g)'], ['c', 'Carbs (g)'], ['f', 'Fat (g)'], ['fib', 'Fiber (g)']].map(([k, l]) => `<label class="field">${l}<input class="input" type="number" inputmode="numeric" min="0" data-target="${k}" value="${T[k]}"></label>`).join('')}
-        </div>
-        <p class="muted small" style="margin:10px 0 0">Saved automatically. Protein × 4 + Carbs × 4 + Fat × 9 = <b id="tgtCheck">${k0(T.p * 4 + T.c * 4 + T.f * 9)}</b> kcal.</p>
-      </div>
       <div class="card settings-card"><h2>Preferences</h2>
         <div class="form-grid">
           <label class="field">Voice language<span class="hint">What the mic listens for</span><select class="select" id="setVoice">
             ${[['en-PH', 'English (Philippines)'], ['fil-PH', 'Filipino / Tagalog'], ['en-US', 'English (US)']].map(([v, l]) => `<option value="${v}"${v === settings.voiceLang ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
           <label class="field">Appearance<span class="hint">Light or dark</span><select class="select" id="setTheme">${[['auto', 'Match device'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<option value="${v}"${v === settings.theme ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
         </div>
-        <p class="muted small" style="margin:10px 0 0">Days are manual: on <b>My Day</b>, tap “start Day ${curDay().n + 1}” whenever your day ends.</p>
+        <p class="muted small" style="margin:10px 0 0">Days are manual: on <b>Today</b>, tap “Start Day ${curDay().n + 1}” whenever your day ends.</p>
       </div>
       <div class="card settings-card"><h2>${acct ? 'Backup' : 'Backup &amp; move to another device'}</h2>
         <p class="muted small" style="margin:0">${acct ? 'Everything is already saved to your account. You can still download a copy for yourself, or restore one (this replaces your current data).' : 'Your days, recipes and own foods live in this browser only, and your phone and PC each keep their own. Download a backup file and open it on the other device with <b>Restore</b>.'}</p>
@@ -809,11 +859,6 @@ window.MacrosApp = { start(ctx) {
       $('#signOutBtn').onclick = () => { if (confirm('Sign out of maCros on this device?')) acct.signOut(); };
       $('#deleteAcctBtn').onclick = openDeleteAccount;
     }
-    $$('[data-target]').forEach(inp => inp.addEventListener('input', () => {
-      settings.targets[inp.dataset.target] = Math.max(0, parseFloat(inp.value) || 0); saveSettings();
-      $('#tgtCheck').textContent = k0(settings.targets.p * 4 + settings.targets.c * 4 + settings.targets.f * 9);
-    }));
-    $('#redoSetupBtn').onclick = () => openSetup(true);
     $('#setVoice').onchange = e => { settings.voiceLang = e.target.value; saveSettings(); };
     $('#setTheme').onchange = e => { settings.theme = e.target.value; saveSettings(); applyTheme(); };
     $('#exportBtn').onclick = exportData;
@@ -873,14 +918,275 @@ window.MacrosApp = { start(ctx) {
 
   // Called by boot.js when another device changed your data
   function reload() {
-    settings = readSettings(); custom = store.get('custom', []); recent = store.get('recent', []); days = loadDays();
+    settings = readSettings(); ensurePhases(); custom = store.get('custom', []); recent = store.get('recent', []); days = loadDays();
     E.setCustom(custom); applyTheme();
     viewIdx = Math.min(viewIdx, days.length - 1);
     updatePill();
-    if (!$('#view-day').hidden) renderDay();
-    else if (!$('#view-foods').hidden) renderFoodList();
-    else if (!$('#view-settings').hidden && !$('#view-settings').contains(document.activeElement)) renderSettings();
-    else if (!$('#view-identify').hidden && !q.value.trim()) renderResults();
+    if (viewOpen('day')) renderDay();
+    else if (viewOpen('add')) { renderFoodList(); if (!q.value.trim()) renderResults(); }
+    else if (viewOpen('menu')) renderMenu();
+    else if (viewOpen('goals') && !$('#view-goals').contains(document.activeElement)) renderGoals();
+    else if (viewOpen('progress') && !$('#view-progress').contains(document.activeElement)) renderProgress();
+    else if (viewOpen('settings') && !$('#view-settings').contains(document.activeElement)) renderSettings();
+  }
+
+  // ==========================================================
+  // MENU · GOALS (phases + targets) · PROGRESS (reports + weigh-ins)
+  // ==========================================================
+  const S = window.MacrosSetup;
+  const DAY_MS = 864e5, LB = 0.45359237;
+  const dayStart = ts => new Date(ts).setHours(0, 0, 0, 0);
+  const shortDate = ts => new Date(ts).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  const wUnit = () => (settings.profile && settings.profile.wUnit) || 'kg';
+  const wShow = kg => wUnit() === 'lb' ? `${fmt(kg / LB, 1)} lb` : `${fmt(kg, 1)} kg`;
+  const wDelta = kg => `${kg >= 0 ? '+' : '−'}${wShow(Math.abs(kg))}`;
+  const currentKg = () => { const w = settings.weighIns || []; return w.length ? w[w.length - 1].kg : (settings.profile && settings.profile.kg) || 0; };
+
+  // ---------- Phases (bulking, cutting, Hyrox…): each keeps its own targets ----------
+  const phaseType = k => S.PHASES.find(x => x.k === k) || S.PHASES[S.PHASES.length - 1];
+  const activePhase = () => (settings.phases || []).find(p => p.id === settings.phaseId) || null;
+  function ensurePhases() {
+    if (!Array.isArray(settings.phases)) settings.phases = [];
+    if (!settings.locks) settings.locks = {};
+    if (!settings.phases.length && settings.setupDone) {
+      const type = settings.profile ? S.phaseForGoal(settings.profile.goal) : 'custom';
+      settings.phases.push({ id: uid(), type, name: phaseType(type).label, targets: { ...settings.targets }, locks: { ...settings.locks } });
+      settings.phaseId = settings.phases[0].id; saveSettings();   // first phase for accounts set up before phases existed
+    }
+    if (settings.phases.length && !activePhase()) { settings.phaseId = settings.phases[0].id; saveSettings(); }
+  }
+  // settings.targets are the ones in use; keep the active phase's copy in step
+  function syncPhase() { const ph = activePhase(); if (ph) { ph.targets = { ...settings.targets }; ph.locks = { ...settings.locks }; } }
+  function phaseTargets(type) {
+    const t = phaseType(type);
+    if (!t.goal || !settings.profile || !settings.profile.kg) return { ...settings.targets };
+    return S.plan({ ...settings.profile, kg: currentKg(), goal: t.goal }).targets;
+  }
+  function switchPhase(id) {
+    syncPhase(); const ph = settings.phases.find(p => p.id === id); if (!ph || ph.id === settings.phaseId) return;
+    settings.phaseId = id; settings.targets = { ...ph.targets }; settings.locks = { ...(ph.locks || {}) };
+    saveSettings(); updatePill(); toast(`Switched to ${ph.name}: ${k0(ph.targets.kcal)} kcal`);
+  }
+
+  // ---------- Targets: change calories and the unlocked macros follow ----------
+  const KC = { p: 4, c: 4, f: 9 };
+  function macroDefaults(kcal) {
+    const ph = activePhase(), prof = settings.profile;
+    const r = S.rules((ph && phaseType(ph.type).goal) || (prof && prof.goal) || 'maintain');
+    const p = prof && prof.kg ? Math.round(r.prot * S.refKg({ ...prof, kg: currentKg() })) : Math.round(kcal * 0.25 / 4);
+    return { p, f: Math.round(kcal * r.fatPct / 9), fib: Math.round(kcal / 1000 * 14) };
+  }
+  // A macro you type gets locked; the free ones fill the gap so P×4 + C×4 + F×9 = calories
+  function rebalance(changed) {
+    const T = settings.targets, L = settings.locks;
+    if (changed === 'kcal') {
+      const d = macroDefaults(T.kcal);
+      if (!L.p) T.p = d.p;
+      if (!L.fib) T.fib = d.fib;
+      if (!L.f && !L.c) T.f = d.f;
+    } else L[changed] = true;
+    if (changed === 'fib') return;
+    const fill = changed === 'kcal' ? ['c', 'f', 'p'].find(k => !L[k]) : ['c', 'f', 'p'].find(k => k !== changed && !L[k]);
+    if (fill) {
+      const rest = T.kcal - ['p', 'c', 'f'].filter(k => k !== fill).reduce((a, k) => a + T[k] * KC[k], 0);
+      T[fill] = Math.max(0, Math.round(rest / KC[fill]));
+    } else if (changed !== 'kcal') T.kcal = T.p * 4 + T.c * 4 + T.f * 9;
+  }
+
+  const LOCK = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M12 2a5 5 0 0 1 5 5v3h1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h1V7a5 5 0 0 1 5-5Zm0 2a3 3 0 0 0-3 3v3h6V7a3 3 0 0 0-3-3Z"/></svg>';
+  const UNLOCK = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M12 2a5 5 0 0 1 4.9 4 1 1 0 0 1-2 .4A3 3 0 0 0 9 7v3h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h1V7a5 5 0 0 1 5-5Z"/></svg>';
+  const ROW_ARROW = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M9.3 6.3a1 1 0 0 1 1.4 0l5 5a1 1 0 0 1 0 1.4l-5 5a1 1 0 0 1-1.4-1.4l4.3-4.3-4.3-4.3a1 1 0 0 1 0-1.4Z"/></svg>';
+
+  function renderMenu() {
+    ensurePhases();
+    const ph = activePhase(), st = periodStats(7), due = weighDue();
+    const row = (href, title, sub, extra) => `<a class="menu-row" href="${href}"><span><b>${title}</b><small>${sub}</small></span>${extra || ''}${ROW_ARROW}</a>`;
+    $('#menuBody').innerHTML = `<div class="menu-list">
+      ${row('#goals', 'Goals', ph ? `${esc(ph.name)} · ${k0(settings.targets.kcal)} kcal · ${fmt(settings.targets.p, 0)} g protein` : 'Targets, phases and your setup')}
+      ${row('#progress', 'Progress', `Logged ${st.loggedDays} of the last ${st.span} day${st.span === 1 ? '' : 's'}`, due.due ? '<span class="pill-due">Weigh-in due</span>' : '')}
+      ${row('#settings', 'Settings', 'Account, appearance, backup')}
+    </div>`;
+  }
+
+  function renderGoals() {
+    ensurePhases();
+    const T = settings.targets, L = settings.locks, prof = settings.profile;
+    const lockBtn = k => `<button type="button" class="lock${L[k] ? ' on' : ''}" data-lock="${k}" aria-pressed="${!!L[k]}" aria-label="${L[k] ? 'Unlock' : 'Lock'} ${k}" title="${L[k] ? 'Locked: stays as you set it' : 'Auto: follows calories'}">${L[k] ? LOCK : UNLOCK}</button>`;
+    $('#goalsBody').innerHTML = `
+      <div class="card settings-card"><h2>Current goal</h2>
+        <p class="muted small" style="margin:0">${prof ? esc(S.summary({ ...prof, kg: currentKg() })) : 'Not set up yet.'}</p>
+        <div class="row-actions"><button class="btn small outline" type="button" id="redoSetupBtn">Redo setup</button></div></div>
+      <div class="card settings-card"><div class="card-head"><h2>Phases</h2><button class="btn small ghost" type="button" id="addPhaseBtn">+ Add phase</button></div>
+        <div class="phase-list">${settings.phases.map(p => `<div class="phase-row${p.id === settings.phaseId ? ' on' : ''}">
+            <button type="button" class="phase-main" data-phase="${p.id}" aria-pressed="${p.id === settings.phaseId}"><span class="radio" aria-hidden="true"></span>
+              <span><b>${esc(p.name)}</b><small>${p.name !== phaseType(p.type).label ? esc(phaseType(p.type).label) + ' · ' : ''}${k0(p.targets.kcal)} kcal · P ${fmt(p.targets.p, 0)} g</small></span></button>
+            <button type="button" class="icon-btn" data-edit-phase="${p.id}" aria-label="Edit ${esc(p.name)}">&#8943;</button></div>`).join('') || '<p class="muted small" style="margin:0">Finish setup to create your first phase.</p>'}</div>
+        <p class="muted small" style="margin:10px 0 0">Tap a phase to switch. Its targets load everywhere in the app.</p></div>
+      <div class="card settings-card"><div class="card-head"><h2>Daily targets</h2><button class="btn small ghost" type="button" id="autoBtn">Auto-calculate</button></div>
+        <label class="field">Calories<input class="input" type="number" inputmode="numeric" min="0" data-target="kcal" value="${T.kcal}"></label>
+        <div class="tgt-grid">${MACROS.map(x => `<div class="field tgt"><span class="tgt-lab"><span><i class="dot-${x.cls}"></i>${x.label} (g)</span>${lockBtn(x.k)}</span>
+          <input class="input" type="number" inputmode="numeric" min="0" data-target="${x.k}" value="${T[x.k]}" aria-label="${x.label} grams"></div>`).join('')}</div>
+        <p class="muted small" id="tgtNote" style="margin:12px 0 0"></p></div>`;
+    tgtNote();
+    $('#redoSetupBtn').onclick = () => openSetup(true);
+    $('#addPhaseBtn').onclick = () => openPhaseForm(null);
+    $('#autoBtn').onclick = () => {
+      settings.locks = {}; rebalance('kcal'); syncPhase(); saveSettings(); updatePill(); renderGoals();
+      toast('Macros recalculated from your calories');
+    };
+    $$('[data-phase]', $('#goalsBody')).forEach(b => b.onclick = () => { switchPhase(b.dataset.phase); renderGoals(); });
+    $$('[data-edit-phase]', $('#goalsBody')).forEach(b => b.onclick = () => openPhaseForm(settings.phases.find(p => p.id === b.dataset.editPhase)));
+    $$('[data-lock]', $('#goalsBody')).forEach(b => b.onclick = () => {
+      const k = b.dataset.lock; settings.locks[k] = !settings.locks[k];
+      if (!settings.locks[k]) rebalance('kcal');   // unlocked: let it follow calories again
+      syncPhase(); saveSettings(); renderGoals();
+    });
+    $$('[data-target]', $('#goalsBody')).forEach(inp => inp.addEventListener('input', () => {
+      const k = inp.dataset.target; const v = parseFloat(inp.value); if (!(v >= 0)) return;
+      settings.targets[k] = Math.round(v); rebalance(k); syncPhase(); saveSettings(); updatePill();
+      $$('[data-target]', $('#goalsBody')).forEach(o => { if (o !== inp) o.value = settings.targets[o.dataset.target]; });
+      $$('[data-lock]', $('#goalsBody')).forEach(b => { const on = !!settings.locks[b.dataset.lock]; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); b.innerHTML = on ? LOCK : UNLOCK; });
+      tgtNote();
+    }));
+  }
+  function tgtNote() {
+    const T = settings.targets; const sum = T.p * 4 + T.c * 4 + T.f * 9; const off = Math.abs(sum - T.kcal) > 25;
+    $('#tgtNote').innerHTML = `Change calories and the unlocked macros follow. A macro you type gets locked ${LOCK}; tap the lock to free it.
+      Protein × 4 + Carbs × 4 + Fat × 9 = <b${off ? ' style="color:var(--danger)"' : ''}>${k0(sum)}</b> kcal${off ? ' (doesn’t match your calories; unlock a macro or tap Auto-calculate)' : ''}.`;
+  }
+
+  function openPhaseForm(ph) {
+    const editing = !!ph; let type = ph ? ph.type : 'maintain';
+    const preview = () => { const t = editing && type === ph.type ? ph.targets : phaseTargets(type); return `${k0(t.kcal)} kcal · P ${fmt(t.p, 0)} · C ${fmt(t.c, 0)} · F ${fmt(t.f, 0)} g`; };
+    openSheet(`${sheetHead(editing ? 'Edit phase' : 'Add a phase', 'Switch phases any time; each keeps its own targets.')}
+      <label class="field">Name<input class="input" id="phName" value="${esc(ph ? ph.name : phaseType(type).label)}" placeholder="e.g. Summer cut"></label>
+      <div class="field" style="margin-top:12px">Type<div class="chips" id="phTypes">${S.PHASES.map(t => `<button type="button" class="chip${t.k === type ? ' on' : ''}" data-type="${t.k}">${esc(t.label)}</button>`).join('')}</div></div>
+      <div class="note" id="phPreview"></div>
+      <div class="add-row"><button class="btn grow" type="button" id="phSave">${editing ? 'Save' : 'Add and switch to it'}</button>${editing && settings.phases.length > 1 ? '<button class="btn danger" type="button" id="phDel">Delete</button>' : ''}</div>`);
+    const showPreview = () => { $('#phPreview').textContent = phaseType(type).goal ? `Targets: ${preview()}` : `Custom: starts with your current targets (${preview()}). Set your own in Daily targets.`; };
+    showPreview();
+    $('#phTypes').addEventListener('click', e => {
+      const b = e.target.closest('[data-type]'); if (!b) return;
+      const nameEl = $('#phName'); const wasDefault = S.PHASES.some(t => t.label === nameEl.value.trim());
+      type = b.dataset.type; if (wasDefault || !nameEl.value.trim()) nameEl.value = phaseType(type).label;
+      $$('#phTypes .chip').forEach(c => c.classList.toggle('on', c.dataset.type === type)); showPreview();
+    });
+    $('#phSave').onclick = () => {
+      const name = $('#phName').value.trim() || phaseType(type).label;
+      if (editing) {
+        const changedType = type !== ph.type; ph.name = name;
+        if (changedType) { ph.type = type; ph.targets = phaseTargets(type); ph.locks = {}; }
+        if (ph.id === settings.phaseId && changedType) { settings.targets = { ...ph.targets }; settings.locks = {}; }
+        saveSettings(); updatePill(); closeSheet(); renderGoals(); toast('Phase saved');
+      } else {
+        syncPhase();
+        const np = { id: uid(), type, name, targets: phaseTargets(type), locks: {} };
+        settings.phases.push(np); saveSettings(); closeSheet(); switchPhase(np.id); renderGoals();
+      }
+    };
+    if (editing && $('#phDel')) $('#phDel').onclick = () => {
+      if (!confirm(`Delete the “${ph.name}” phase?`)) return;
+      settings.phases = settings.phases.filter(p => p.id !== ph.id);
+      if (settings.phaseId === ph.id) { const first = settings.phases[0]; settings.phaseId = first.id; settings.targets = { ...first.targets }; settings.locks = { ...(first.locks || {}) }; }
+      saveSettings(); updatePill(); closeSheet(); renderGoals(); toast('Phase deleted');
+    };
+  }
+
+  // ---------- Progress: last 7 / 30 days, estimated vs actual weight, weigh-ins ----------
+  let progRange = 7;
+  function weighDue() {
+    if (!settings.profile) return { due: false };
+    const w = settings.weighIns || []; const every = settings.weighEvery || 7;
+    if (!w.length) return { due: true, next: Date.now() };
+    const next = dayStart(w[w.length - 1].t) + every * DAY_MS;
+    return { due: Date.now() >= next, next };
+  }
+  function periodStats(n) {
+    const today = dayStart(Date.now());
+    const first = Math.min(...days.flatMap(d => d.entries.map(e => e.t)), Date.now());
+    const from = Math.max(today - (n - 1) * DAY_MS, dayStart(first));   // don't count days before you started
+    const span = Math.round((today - from) / DAY_MS) + 1;
+    const dates = new Set(); days.forEach(d => d.entries.forEach(e => { if (e.t >= from) dates.add(dayStart(e.t)); }));
+    // Averages use finished days only; the current day is still being eaten
+    const logged = days.filter(d => d !== curDay() && d.entries.length && d.start >= from).map(d => E.sumMacros(d.entries));
+    const T = settings.targets; const avg = k => logged.length ? logged.reduce((a, t) => a + t[k], 0) / logged.length : 0;
+    const tdee = settings.profile && settings.profile.kg ? S.plan({ ...settings.profile, kg: currentKg() }).tdee : 0;
+    return {
+      from, span, dates, loggedDays: dates.size, count: logged.length, avgKcal: avg('kcal'), avgP: avg('p'),
+      onTarget: logged.filter(t => Math.abs(t.kcal - T.kcal) <= T.kcal * 0.1).length, protHit: logged.filter(t => t.p >= T.p * 0.9).length,
+      tdee, estChange: tdee ? logged.reduce((a, t) => a + t.kcal - tdee, 0) / 7700 : null,
+      weekly: tdee && logged.length ? (avg('kcal') - tdee) * 7 / 7700 : null,
+    };
+  }
+  function renderProgress() {
+    const st = periodStats(progRange), T = settings.targets, prof = settings.profile;
+    const w = settings.weighIns || [], every = settings.weighEvery || 7, due = weighDue();
+    const inWin = w.filter(x => x.t >= st.from);
+    const before = [...w].reverse().find(x => x.t < st.from);
+    const base = before || inWin[0]; const latest = w[w.length - 1];
+    const actual = base && latest && latest !== base ? latest.kg - base.kg : null;
+    const dots = Array.from({ length: progRange }, (_, i) => dayStart(Date.now()) - (progRange - 1 - i) * DAY_MS)
+      .map(d => `<i class="${d < st.from ? 'off' : st.dates.has(d) ? 'on' : ''}" title="${shortDate(d)}"></i>`).join('');
+    const cur = currentKg(); const tgt = prof && prof.targetKg;
+    const proj = st.weekly != null && cur && st.count >= 3 ? [4, 12].map(wk => `${wk} weeks: <b>${wShow(cur + st.weekly * wk)}</b>`).join(' · ') : '';
+    const eta = st.count >= 3 && st.weekly && tgt && Math.sign(tgt - cur) === Math.sign(st.weekly) && Math.abs(st.weekly) > 0.02 ? Math.ceil((tgt - cur) / st.weekly) : 0;
+    const freq = [[7, 'Every week'], [14, 'Every 2 weeks'], [30, 'Every month']];
+    $('#progressBody').innerHTML = `
+      <div class="seg two" id="progSeg" style="margin:0 0 12px">${[[7, 'Last 7 days'], [30, 'Last 30 days']].map(([k, l]) => `<button type="button" class="${k === progRange ? 'on' : ''}" data-range="${k}">${l}</button>`).join('')}</div>
+      <div class="card settings-card"><h2>Logging</h2>
+        <div class="streak${progRange > 7 ? ' wide' : ''}" aria-hidden="true">${dots}</div>
+        <p class="muted small" style="margin:10px 0 0">${st.loggedDays === st.span ? `<b>No skipped days.</b> You logged all ${st.span} day${st.span === 1 ? '' : 's'}.` : `Logged <b>${st.loggedDays} of ${st.span}</b> days. ${st.span - st.loggedDays} skipped.`}</p></div>
+      <div class="card settings-card"><h2>Eating vs target</h2>
+        ${st.count ? `<div class="stat-grid">
+          <div><small>Avg calories</small><b>${k0(st.avgKcal)}</b><span>of ${k0(T.kcal)} target</span></div>
+          <div><small>Avg protein</small><b>${fmt(st.avgP, 0)} g</b><span>of ${fmt(T.p, 0)} g target</span></div>
+          <div><small>Calories on target</small><b>${st.onTarget} of ${st.count}</b><span>days within 10%</span></div>
+          <div><small>Protein hit</small><b>${st.protHit} of ${st.count}</b><span>days at 90%+</span></div></div>`
+        : `<p class="muted small" style="margin:0">${days.some(d => d.entries.length) ? 'Averages show once you finish a day (Start the next day on Today).' : 'No days logged in this period yet.'}</p>`}</div>
+      <div class="card settings-card"><h2>Weight</h2>
+        ${prof ? `<div class="stat-grid">
+          <div><small>Current</small><b>${wShow(cur)}</b><span>${latest ? 'weighed ' + shortDate(latest.t) : 'from setup'}</span></div>
+          <div><small>Estimated from eating</small><b>${st.estChange != null && st.count ? wDelta(st.estChange) : '—'}</b><span>vs burning ${k0(st.tdee)} kcal/day</span></div>
+          ${actual != null ? `<div><small>Actual (weigh-ins)</small><b>${wDelta(actual)}</b><span>since ${shortDate(base.t)}</span></div>` : ''}
+          ${tgt ? `<div><small>Goal</small><b>${wShow(tgt)}</b><span>${eta ? `about ${eta} week${eta === 1 ? '' : 's'} at this pace` : st.count >= 3 ? 'not moving toward it yet' : ''}</span></div>` : ''}</div>
+          <p class="muted small" style="margin:12px 0 0">${proj ? `If you keep eating like this, you'd weigh about ${proj}. Weigh in regularly so this stays accurate.` : 'Log at least 3 full days to see where your weight is heading.'}</p>`
+        : '<p class="muted small" style="margin:0">Finish setup to see weight estimates.</p>'}</div>
+      ${prof ? `<div class="card settings-card"><h2>Weigh-in</h2>
+        ${due.due ? '<p class="due-text">Time for your weigh-in.</p>' : `<p class="muted small" style="margin:0 0 10px">Next weigh-in: <b>${shortDate(due.next)}</b></p>`}
+        <div class="add-row" style="margin-top:6px"><input class="input" id="wiVal" type="number" inputmode="decimal" min="20" step="0.1" placeholder="${wShow(cur).split(' ')[0]}" aria-label="Your weight in ${wUnit()}" style="flex:1"><span class="muted" style="align-self:center">${wUnit()}</span><button class="btn" type="button" id="wiSave">Save</button></div>
+        <label class="field" style="margin-top:14px">How often do you want to weigh in?
+          <select class="select" id="wiEvery">${freq.map(([d, l]) => `<option value="${d}"${d === every ? ' selected' : ''}>${l}</option>`).join('')}<option value="custom"${freq.some(f => f[0] === every) ? '' : ' selected'}>Every … days</option></select></label>
+        <label class="field" id="wiCustomWrap" style="margin-top:10px"${freq.some(f => f[0] === every) ? ' hidden' : ''}>Days between weigh-ins<input class="input" id="wiCustom" type="number" inputmode="numeric" min="1" max="90" value="${every}"></label>
+        ${w.length ? `<ul class="parts weigh-list">${[...w].reverse().slice(0, 8).map((x, i, arr) => `<li><span>${shortDate(x.t)}</span><span><b>${wShow(x.kg)}</b>${arr[i + 1] ? ` <small class="muted">${wDelta(x.kg - arr[i + 1].kg)}</small>` : ''}
+            <button class="remove" type="button" data-wi="${x.t}" aria-label="Delete weigh-in">&times;</button></span></li>`).join('')}</ul>` : ''}</div>` : ''}`;
+    $$('#progSeg [data-range]').forEach(b => b.onclick = () => { progRange = +b.dataset.range; renderProgress(); });
+    if (!prof) return;
+    $('#wiSave').onclick = () => {
+      let v = parseFloat($('#wiVal').value); if (!(v > 0)) return toast('Enter your weight first.');
+      const kg = wUnit() === 'lb' ? v * LB : v; if (kg < 20 || kg > 300) return toast('That weight looks off. Check the number.');
+      logWeight(kg);
+    };
+    $('#wiEvery').onchange = e => {
+      const custom = e.target.value === 'custom'; $('#wiCustomWrap').hidden = !custom;
+      if (!custom) { settings.weighEvery = +e.target.value; saveSettings(); renderProgress(); }
+    };
+    $('#wiCustom').onchange = e => { const d = Math.round(parseFloat(e.target.value)); if (d >= 1 && d <= 90) { settings.weighEvery = d; saveSettings(); renderProgress(); } };
+    $$('[data-wi]', $('#progressBody')).forEach(b => b.onclick = () => {
+      if (!confirm('Delete this weigh-in?')) return;
+      settings.weighIns = (settings.weighIns || []).filter(x => String(x.t) !== b.dataset.wi); saveSettings(); renderProgress();
+    });
+  }
+  function logWeight(kg) {
+    const w = (settings.weighIns || []).filter(x => dayStart(x.t) !== dayStart(Date.now()));   // one weigh-in per day
+    w.push({ t: Date.now(), kg: Math.round(kg * 10) / 10 }); settings.weighIns = w;
+    if (settings.profile) settings.profile.kg = Math.round(kg * 10) / 10;
+    saveSettings(); renderProgress();
+    const ph = activePhase();
+    const canUpdate = ph && phaseType(ph.type).goal;
+    toast(`Saved ${wShow(kg)}`, canUpdate ? { label: 'Update targets', run: () => {
+      settings.targets = phaseTargets(ph.type); settings.locks = {}; syncPhase(); saveSettings(); updatePill();
+      toast(`New target: ${k0(settings.targets.kcal)} kcal · ${settings.targets.p} g protein`);
+    } } : null);
   }
 
   // ---------- Setup (body stats + goal → targets) ----------
@@ -892,15 +1198,24 @@ window.MacrosApp = { start(ctx) {
       profile: settings.profile,
       onCancel: canCancel ? close : null,
       onDone: (profile, targets) => {
-        settings.profile = profile; settings.targets = { ...targets }; settings.setupDone = true; saveSettings();
+        settings.profile = profile; settings.targets = { ...targets }; settings.locks = {}; settings.setupDone = true;
+        // Put the result in the phase that matches the goal (creating it the first time)
+        ensurePhases();
+        const type = S.phaseForGoal(profile.goal);
+        let ph = settings.phases.find(p => p.type === type);
+        if (!ph) { ph = { id: uid(), type, name: phaseType(type).label }; settings.phases.push(ph); }
+        settings.phaseId = ph.id; syncPhase();
+        settings.weighIns = (settings.weighIns || []).filter(x => dayStart(x.t) !== dayStart(Date.now())).concat({ t: Date.now(), kg: profile.kg });
+        saveSettings();
         close(); updatePill();
-        if (!$('#view-settings').hidden) renderSettings(); else if (!$('#view-day').hidden) renderDay();
+        route();
         toast(`Your target: ${k0(targets.kcal)} kcal · ${targets.p} g protein a day`);
       },
     });
   }
 
   // ---------- Boot ----------
+  ensurePhases();
   updatePill();
   autosize();
   identify();

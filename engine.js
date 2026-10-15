@@ -32,6 +32,7 @@
   addUnit('handful', 'handful handfuls dakot');
   addUnit('clove', 'clove cloves');
   addUnit('shot', 'shot shots tagay');
+  addUnit('kcal', 'kcal kcals cal cals calorie calories kilocalorie kilocalories');   // "532 calories of nuggets" sizes by energy
 
   const UNIT_LABEL = {
     g: ['g', 'g'], kg: ['kg', 'kg'], oz: ['oz', 'oz'], lb: ['lb', 'lb'], ml: ['ml', 'ml'], l: ['L', 'L'],
@@ -39,7 +40,7 @@
     slice: ['slice', 'slices'], can: ['can', 'cans'], pack: ['pack', 'packs'], scoop: ['scoop', 'scoops'],
     bowl: ['bowl', 'bowls'], plate: ['plate', 'plates'], serving: ['serving', 'servings'],
     stick: ['stick', 'sticks'], glass: ['glass', 'glasses'], bottle: ['bottle', 'bottles'],
-    handful: ['handful', 'handfuls'], clove: ['clove', 'cloves'], shot: ['shot', 'shots'],
+    handful: ['handful', 'handfuls'], clove: ['clove', 'cloves'], shot: ['shot', 'shots'], kcal: ['kcal', 'kcal'],
   };
   // Used only when a food has no size for the unit you asked for.
   const FALLBACK_G = { cup: 200, tbsp: 15, tsp: 5, pc: 100, slice: 30, can: 155, pack: 50, scoop: 30, bowl: 300,
@@ -56,7 +57,7 @@
     pito: 7, pitong: 7, walo: 8, walong: 8, siyam: 9, sampu: 10, sampung: 10 };
   const STOP = new Set(('i im ive ate had have having eat eating eaten just about around approx approximately roughly ' +
     'like of the some my for today tonight this morning breakfast lunch dinner supper snack snacks merienda meryenda ' +
-    'almusal tanghalian hapunan ng na ang ko ako kumain kinain mga yung iyong po lang si also then').split(' '));
+    'almusal tanghalian hapunan ng na ang ko ako kumain kinain mga yung iyong po lang si also then worth from').split(' '));
   const SIZE = { small: 0.75, maliit: 0.75, medium: 1, large: 1.3, big: 1.3, malaki: 1.3, jumbo: 1.6 };
   const RAW_WORDS = new Set(['raw', 'uncooked', 'hilaw', 'dry']);
   const MEAL_WORDS = [
@@ -216,6 +217,10 @@
       else unit = 'g';
     }
     if (unit === 'g') return { qty, unit, grams: qty, note };
+    if (unit === 'kcal') {
+      const kc = food.parts ? food.comboTotal.kcal / (food.comboGrams || 1) * 100 : food.kcal;
+      return { qty, unit, grams: kc > 0 ? qty / kc * 100 : 0, note };
+    }
     let per = food.units[unit];
     if (!per) for (const s of UNIT_SYNONYMS[unit] || []) if (food.units[s]) { per = food.units[s]; unit = s; break; }
     if (!per) { per = FALLBACK_G[unit] || 100; note = 'approx'; }
@@ -239,6 +244,7 @@
   function unitsFor(food) {
     const list = Object.keys(food.units).map(k => ({ key: k, grams: food.units[k] }));
     list.push({ key: 'g', grams: 1 });
+    if (food.kcal > 0) list.push({ key: 'kcal', grams: 100 / food.kcal });
     return list;
   }
 
@@ -336,7 +342,7 @@
     const food = top.food;
     const alts = matches.slice(1).filter(m => m.score > 200).map(m => m.food).filter(f => !f.parts);
     if (food.parts) {
-      const n = (ch.qty || 1) * ch.mult;
+      const n = ch.unit === 'kcal' && food.comboTotal.kcal ? ch.qty / food.comboTotal.kcal : (ch.qty || 1) * ch.mult;
       return food.parts.map(pt => ({ kind: 'food', food: pt.food, qty: Math.round(pt.grams * n), unit: 'g', grams: pt.grams * n,
         note: '', parent: food.name, query: ch.said, alts: [] }));
     }
@@ -396,6 +402,7 @@
   function amountText(food, qty, unit) {
     const q = Math.round(qty * 100) / 100;
     if (unit === 'g') return `${q}g`;
+    if (unit === 'kcal') return `${q} kcal`;
     return `${q} ${unitLabel(unit, q)}`;
   }
 
