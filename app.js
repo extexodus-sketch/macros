@@ -113,7 +113,8 @@ window.MacrosApp = { start(ctx) {
           <li>Tap the calories at the top right to switch between what you’ve eaten and what’s left.</li>
           <li>You can go back to past days with the arrows and still edit them.</li>
           <li>Your targets come from your setup and current phase. Change them in Menu → Goals.</li>
-          <li>Tap the note icon next to a meal to write down how it went.</li></ul>`,
+          <li>Tap the note icon next to a meal to write down how it went.</li>
+          <li>Swipe left, or tap <b>This week</b>, to see Monday to Sunday.</li></ul>`,
       add: `<ol class="steps">
           <li><b class="n">1</b><div><b>Type or tap the mic</b> and say what you ate, with amounts: <span class="muted">“150 grams lean ground pork and one cup of rice”</span>, or by calories: <span class="muted">“532 calories of chicken nuggets”</span>. English, Tagalog or Taglish all work.</div></li>
           <li><b class="n">2</b><div><b>Check the matches.</b> Fix any amount, switch between cooked and raw, or pick a different food. No amount? It assumes 1 normal serving and tells you.</div></li>
@@ -152,16 +153,17 @@ window.MacrosApp = { start(ctx) {
 
   // ---------- Routing ----------
   // Bottom bar: Today · Add · Menu. Goals, Progress and Settings open from Menu.
-  const TABS = ['day', 'add', 'menu', 'goals', 'progress', 'settings'];
+  const TABS = ['day', 'add', 'menu', 'goals', 'progress', 'tutorial', 'settings'];
   const OLD_TABS = { today: 'day', identify: 'add', foods: 'add' };
   function route() {
     let tab = location.hash.slice(1); tab = OLD_TABS[tab] || tab;
     if (!TABS.includes(tab)) tab = 'day';
     TABS.forEach(t => { $('#view-' + t).hidden = t !== tab; });
-    const navTab = ['goals', 'progress', 'settings'].includes(tab) ? 'menu' : tab;
+    const navTab = ['goals', 'progress', 'tutorial', 'settings'].includes(tab) ? 'menu' : tab;
     $$('.tabbar a').forEach(a => a.classList.toggle('on', a.dataset.tab === navTab));
-    if (tab === 'day') { viewIdx = days.length - 1; renderDay(); }
-    if (tab === 'add') renderFoods();
+    if (tab === 'day') { viewIdx = days.length - 1; showDash(dashPage); }
+    if (tab === 'add') { renderFoods(); renderWater(); }
+    if (tab === 'tutorial') renderTutorial();
     if (tab === 'menu') renderMenu();
     if (tab === 'goals') renderGoals();
     if (tab === 'progress') renderProgress();
@@ -420,6 +422,9 @@ window.MacrosApp = { start(ctx) {
       }).join('')}
     </div></div>
     <p class="muted small" style="margin:12px 0 0">${entries.length ? (left >= 0 ? `<b>${k0(left)} kcal</b> left to reach your target.` : `<b>${k0(-left)} kcal</b> over your target.`) + ` Protein to go: <b>${fmt(Math.max(T.p - tot.p, 0), 0)} g</b>.` : `Target: ${k0(T.kcal)} kcal · ${fmt(T.p, 0)} g protein${activePhase() ? ` (${esc(activePhase().name)})` : ''}. Change it in Menu → Goals.`}</p></div>`;
+    if (isCur) { const wc = waterCfg(); html = html.replace('</p></div>', `</p><a class="water-line" href="#add">Water: <b>${day.water || 0} of ${wc.goal}</b> glasses · tap to add</a></div>`); }
+    if (isCur && settings.setupDone && !(settings.tour && settings.tour.hide)) html = `<div class="card tour-card"><div><b>New here?</b><span>Take the 2-minute tour of everything maCros can do.</span></div>
+      <div class="row-actions" style="margin-top:10px"><button class="btn small" type="button" data-act="tour">Start the tour</button><button class="btn ghost small" type="button" data-act="tourhide">Not now</button></div></div>` + html;
     if (isCur && weighDue().due) html = `<a class="due-banner" href="#progress"><span><b>Weigh-in time</b> · log your weight to keep your estimate on track</span><span aria-hidden="true">&#8250;</span></a>` + html;
 
     const notes = day.notes || {};
@@ -464,6 +469,8 @@ window.MacrosApp = { start(ctx) {
     }
     if (b.dataset.act === 'gocur') { viewIdx = days.length - 1; renderDay(); }
     if (b.dataset.act === 'note') openNote(day, b.dataset.meal);
+    if (b.dataset.act === 'tour') openTour(0);
+    if (b.dataset.act === 'tourhide') { settings.tour = Object.assign({}, settings.tour, { hide: true }); saveSettings(); renderDay(); toast('You can find the tour in Menu → Tutorial'); }
     if (b.dataset.act === 'copy') {
       const t = E.sumMacros(day.entries);
       const lines = [`Day ${day.n} (${when(day.start)}): ${k0(t.kcal)} kcal · P ${fmt(t.p, 0)}g · C ${fmt(t.c, 0)}g · F ${fmt(t.f, 0)}g · Fiber ${fmt(t.fib, 0)}g`];
@@ -828,6 +835,8 @@ window.MacrosApp = { start(ctx) {
         <div class="form-grid">
           <label class="field">Voice language<span class="hint">What the mic listens for</span><select class="select" id="setVoice">
             ${[['en-PH', 'English (Philippines)'], ['fil-PH', 'Filipino / Tagalog'], ['en-US', 'English (US)']].map(([v, l]) => `<option value="${v}"${v === settings.voiceLang ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+          <label class="field">Water goal<span class="hint">Glasses a day</span><input class="input" id="setWaterGoal" type="number" inputmode="numeric" min="1" max="30" value="${waterCfg().goal}"></label>
+          <label class="field">Glass size<span class="hint">ml per glass</span><input class="input" id="setWaterMl" type="number" inputmode="numeric" min="50" max="1000" step="10" value="${waterCfg().ml}"></label>
           <label class="field">Appearance<span class="hint">Light or dark</span><select class="select" id="setTheme">${[['auto', 'Match device'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<option value="${v}"${v === settings.theme ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
         </div>
         <p class="muted small" style="margin:10px 0 0">Days are manual: on <b>Today</b>, tap “Start Day ${curDay().n + 1}” whenever your day ends.</p>
@@ -860,6 +869,8 @@ window.MacrosApp = { start(ctx) {
       $('#deleteAcctBtn').onclick = openDeleteAccount;
     }
     $('#setVoice').onchange = e => { settings.voiceLang = e.target.value; saveSettings(); };
+    $('#setWaterGoal').onchange = e => { const v = Math.round(+e.target.value); if (v >= 1 && v <= 30) { settings.water = Object.assign(waterCfg(), { goal: v }); saveSettings(); toast(`Water goal: ${v} glasses`); } };
+    $('#setWaterMl').onchange = e => { const v = Math.round(+e.target.value); if (v >= 50 && v <= 1000) { settings.water = Object.assign(waterCfg(), { ml: v }); saveSettings(); toast(`Glass size: ${v} ml`); } };
     $('#setTheme').onchange = e => { settings.theme = e.target.value; saveSettings(); applyTheme(); };
     $('#exportBtn').onclick = exportData;
     $('#importFile').onchange = e => { const f = e.target.files[0]; if (f) importData(f); e.target.value = ''; };
@@ -922,8 +933,8 @@ window.MacrosApp = { start(ctx) {
     E.setCustom(custom); applyTheme();
     viewIdx = Math.min(viewIdx, days.length - 1);
     updatePill();
-    if (viewOpen('day')) renderDay();
-    else if (viewOpen('add')) { renderFoodList(); if (!q.value.trim()) renderResults(); }
+    if (viewOpen('day')) showDash(dashPage);
+    else if (viewOpen('add')) { renderFoodList(); renderWater(); if (!q.value.trim()) renderResults(); }
     else if (viewOpen('menu')) renderMenu();
     else if (viewOpen('goals') && !$('#view-goals').contains(document.activeElement)) renderGoals();
     else if (viewOpen('progress') && !$('#view-progress').contains(document.activeElement)) renderProgress();
@@ -1004,7 +1015,8 @@ window.MacrosApp = { start(ctx) {
     $('#menuBody').innerHTML = `<div class="menu-list">
       ${row('#goals', 'Goals', ph ? `${esc(ph.name)} · ${k0(settings.targets.kcal)} kcal · ${fmt(settings.targets.p, 0)} g protein` : 'Targets, phases and your setup')}
       ${row('#progress', 'Progress', `Logged ${st.loggedDays} of the last ${st.span} day${st.span === 1 ? '' : 's'}`, due.due ? '<span class="pill-due">Weigh-in due</span>' : '')}
-      ${row('#settings', 'Settings', 'Account, appearance, backup')}
+      ${row('#tutorial', 'Tutorial', `How to use maCros · ${tourProgress().done} of ${tourProgress().total} steps done`)}
+      ${row('#settings', 'Settings', 'Account, appearance, water goal, backup')}
     </div>`;
   }
 
@@ -1094,12 +1106,46 @@ window.MacrosApp = { start(ctx) {
 
   // ---------- Progress: last 7 / 30 days, estimated vs actual weight, weigh-ins ----------
   let progRange = 7;
+  // Due at the usual weigh-in time, `weighEvery` days after the last weigh-in
+  const weighTime = () => settings.weighTime || '07:00';
   function weighDue() {
     if (!settings.profile) return { due: false };
     const w = settings.weighIns || []; const every = settings.weighEvery || 7;
     if (!w.length) return { due: true, next: Date.now() };
-    const next = dayStart(w[w.length - 1].t) + every * DAY_MS;
+    const [hh, mm] = weighTime().split(':').map(Number);
+    const next = new Date(dayStart(w[w.length - 1].t) + every * DAY_MS).setHours(hh || 0, mm || 0, 0, 0);
     return { due: Date.now() >= next, next };
+  }
+  const timeLabel = ts => new Date(ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+
+  // Weight trend: a smoothed line through noisy scale readings (moves 10% per day toward each new reading)
+  function weightTrend() {
+    const w = [...(settings.weighIns || [])].sort((a, b) => a.t - b.t); let tr = null, prev = null;
+    return w.map(x => {
+      if (tr == null) tr = x.kg;
+      else { const gap = Math.max((x.t - prev) / DAY_MS, 0.5); tr += (1 - Math.pow(0.9, gap)) * (x.kg - tr); }
+      prev = x.t; return { t: x.t, kg: x.kg, trend: tr };
+    });
+  }
+  function trendChart(pts, from) {
+    const W = 320, H = 150, L = 36, R = 10, T = 12, B = 22;
+    const now = Date.now(), x0 = Math.min(from, pts[0].t), span = Math.max(now - x0, DAY_MS);
+    const vals = pts.flatMap(p => [p.kg, p.trend]); let lo = Math.min(...vals), hi = Math.max(...vals);
+    if (hi - lo < 1) { const mid = (hi + lo) / 2; lo = mid - 0.5; hi = mid + 0.5; }
+    const pad = (hi - lo) * 0.12; lo -= pad; hi += pad;
+    const show = kg => wUnit() === 'lb' ? kg / LB : kg;
+    const X = t => L + (t - x0) / span * (W - L - R), Y = kg => T + (hi - kg) / (hi - lo) * (H - T - B);
+    const ticks = [lo + pad, (lo + hi) / 2, hi - pad];
+    const line = pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.t).toFixed(1)},${Y(p.trend).toFixed(1)}`).join(' ');
+    const last = pts[pts.length - 1];
+    const md = ts => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return `<svg class="trend-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weight trend: ${wShow(last.trend)} now">
+      ${ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" class="grid"/><text x="${L - 6}" y="${(Y(v) + 4).toFixed(1)}" class="axis" text-anchor="end">${fmt(show(v), 1)}</text>`).join('')}
+      <text x="${L}" y="${H - 5}" class="axis">${md(x0)}</text><text x="${W - R}" y="${H - 5}" class="axis" text-anchor="end">Today</text>
+      ${pts.map(p => `<circle cx="${X(p.t).toFixed(1)}" cy="${Y(p.kg).toFixed(1)}" r="4" class="scale-dot"><title>${shortDate(p.t)}: ${wShow(p.kg)} on the scale, trend ${wShow(p.trend)}</title></circle>`).join('')}
+      ${pts.length > 1 ? `<path d="${line}" class="trend-line"/>` : ''}
+      <circle cx="${X(last.t).toFixed(1)}" cy="${Y(last.trend).toFixed(1)}" r="5" class="trend-end"><title>Trend now: ${wShow(last.trend)}</title></circle>
+    </svg>`;
   }
   function periodStats(n) {
     const today = dayStart(Date.now());
@@ -1119,10 +1165,12 @@ window.MacrosApp = { start(ctx) {
     };
   }
   function renderProgress() {
+    if (finishedDays() >= 3 && !(settings.tour && settings.tour.progressSeen)) { settings.tour = Object.assign({}, settings.tour, { progressSeen: true }); saveSettings(); }
     const st = periodStats(progRange), T = settings.targets, prof = settings.profile;
     const w = settings.weighIns || [], every = settings.weighEvery || 7, due = weighDue();
-    const inWin = w.filter(x => x.t >= st.from);
-    const before = [...w].reverse().find(x => x.t < st.from);
+    const wFrom = dayStart(Date.now()) - (progRange - 1) * DAY_MS;
+    const inWin = w.filter(x => x.t >= wFrom);
+    const before = [...w].reverse().find(x => x.t < wFrom);
     const base = before || inWin[0]; const latest = w[w.length - 1];
     const actual = base && latest && latest !== base ? latest.kg - base.kg : null;
     const dots = Array.from({ length: progRange }, (_, i) => dayStart(Date.now()) - (progRange - 1 - i) * DAY_MS)
@@ -1130,11 +1178,16 @@ window.MacrosApp = { start(ctx) {
     const cur = currentKg(); const tgt = prof && prof.targetKg;
     const proj = st.weekly != null && cur && st.count >= 3 ? [4, 12].map(wk => `${wk} weeks: <b>${wShow(cur + st.weekly * wk)}</b>`).join(' · ') : '';
     const eta = st.count >= 3 && st.weekly && tgt && Math.sign(tgt - cur) === Math.sign(st.weekly) && Math.abs(st.weekly) > 0.02 ? Math.ceil((tgt - cur) / st.weekly) : 0;
-    const freq = [[7, 'Every week'], [14, 'Every 2 weeks'], [30, 'Every month']];
+    const freq = [[1, 'Every day'], [7, 'Every week'], [14, 'Every 2 weeks'], [30, 'Every month']];
+    const chartFrom = dayStart(Date.now()) - (progRange - 1) * DAY_MS;   // weigh-ins can predate your first food log
+    const trendAll = weightTrend(); const trendPts = trendAll.filter(p => p.t >= chartFrom);
+    const trendNow = trendAll.length ? trendAll[trendAll.length - 1].trend : 0;
+    const trendBase = [...trendAll].reverse().find(p => p.t < chartFrom) || trendPts[0];
+    const trendChange = trendPts.length && trendBase && trendBase !== trendPts[trendPts.length - 1] ? trendNow - trendBase.trend : null;
     $('#progressBody').innerHTML = `
-      <div class="seg two" id="progSeg" style="margin:0 0 12px">${[[7, 'Last 7 days'], [30, 'Last 30 days']].map(([k, l]) => `<button type="button" class="${k === progRange ? 'on' : ''}" data-range="${k}">${l}</button>`).join('')}</div>
+      <div class="seg three" id="progSeg" style="margin:0 0 12px">${[[7, '7 days'], [30, '30 days'], [90, '90 days']].map(([k, l]) => `<button type="button" class="${k === progRange ? 'on' : ''}" data-range="${k}">${l}</button>`).join('')}</div>
       <div class="card settings-card"><h2>Logging</h2>
-        <div class="streak${progRange > 7 ? ' wide' : ''}" aria-hidden="true">${dots}</div>
+        <div class="streak${progRange > 30 ? ' tiny' : progRange > 7 ? ' wide' : ''}" aria-hidden="true">${dots}</div>
         <p class="muted small" style="margin:10px 0 0">${st.loggedDays === st.span ? `<b>No skipped days.</b> You logged all ${st.span} day${st.span === 1 ? '' : 's'}.` : `Logged <b>${st.loggedDays} of ${st.span}</b> days. ${st.span - st.loggedDays} skipped.`}</p></div>
       <div class="card settings-card"><h2>Eating vs target</h2>
         ${st.count ? `<div class="stat-grid">
@@ -1143,6 +1196,11 @@ window.MacrosApp = { start(ctx) {
           <div><small>Calories on target</small><b>${st.onTarget} of ${st.count}</b><span>days within 10%</span></div>
           <div><small>Protein hit</small><b>${st.protHit} of ${st.count}</b><span>days at 90%+</span></div></div>`
         : `<p class="muted small" style="margin:0">${days.some(d => d.entries.length) ? 'Averages show once you finish a day (Start the next day on Today).' : 'No days logged in this period yet.'}</p>`}</div>
+      ${prof ? `<div class="card settings-card"><div class="card-head"><h2>Weight trend</h2>${trendPts.length ? `<span class="trend-val">${wShow(trendNow)}</span>` : ''}</div>
+        ${trendPts.length ? `${trendChart(trendPts, chartFrom)}
+          <div class="chart-legend"><span><i class="lg-dot"></i>Scale weight</span><span><i class="lg-line"></i>Trend</span></div>
+          <p class="muted small" style="margin:8px 0 0">Scale weight jumps around with water, salt and food in your stomach. The trend line smooths that out, so watch the line, not single readings.${trendChange != null ? ` Trend change in this period: <b>${wDelta(trendChange)}</b>.` : ''}</p>`
+        : '<p class="muted small" style="margin:0">Log a weigh-in below to start your trend line.</p>'}</div>` : ''}
       <div class="card settings-card"><h2>Weight</h2>
         ${prof ? `<div class="stat-grid">
           <div><small>Current</small><b>${wShow(cur)}</b><span>${latest ? 'weighed ' + shortDate(latest.t) : 'from setup'}</span></div>
@@ -1152,11 +1210,12 @@ window.MacrosApp = { start(ctx) {
           <p class="muted small" style="margin:12px 0 0">${proj ? `If you keep eating like this, you'd weigh about ${proj}. Weigh in regularly so this stays accurate.` : 'Log at least 3 full days to see where your weight is heading.'}</p>`
         : '<p class="muted small" style="margin:0">Finish setup to see weight estimates.</p>'}</div>
       ${prof ? `<div class="card settings-card"><h2>Weigh-in</h2>
-        ${due.due ? '<p class="due-text">Time for your weigh-in.</p>' : `<p class="muted small" style="margin:0 0 10px">Next weigh-in: <b>${shortDate(due.next)}</b></p>`}
+        ${due.due ? '<p class="due-text">Time for your weigh-in.</p>' : `<p class="muted small" style="margin:0 0 10px">Next weigh-in: <b>${shortDate(due.next)}, ${timeLabel(due.next)}</b></p>`}
         <div class="add-row" style="margin-top:6px"><input class="input" id="wiVal" type="number" inputmode="decimal" min="20" step="0.1" placeholder="${wShow(cur).split(' ')[0]}" aria-label="Your weight in ${wUnit()}" style="flex:1"><span class="muted" style="align-self:center">${wUnit()}</span><button class="btn" type="button" id="wiSave">Save</button></div>
         <label class="field" style="margin-top:14px">How often do you want to weigh in?
           <select class="select" id="wiEvery">${freq.map(([d, l]) => `<option value="${d}"${d === every ? ' selected' : ''}>${l}</option>`).join('')}<option value="custom"${freq.some(f => f[0] === every) ? '' : ' selected'}>Every … days</option></select></label>
         <label class="field" id="wiCustomWrap" style="margin-top:10px"${freq.some(f => f[0] === every) ? ' hidden' : ''}>Days between weigh-ins<input class="input" id="wiCustom" type="number" inputmode="numeric" min="1" max="90" value="${every}"></label>
+        <label class="field" style="margin-top:10px">Usual weigh-in time<span class="hint">Best right after waking up, before eating or drinking</span><input class="input" id="wiTime" type="time" value="${weighTime()}"></label>
         ${w.length ? `<ul class="parts weigh-list">${[...w].reverse().slice(0, 8).map((x, i, arr) => `<li><span>${shortDate(x.t)}</span><span><b>${wShow(x.kg)}</b>${arr[i + 1] ? ` <small class="muted">${wDelta(x.kg - arr[i + 1].kg)}</small>` : ''}
             <button class="remove" type="button" data-wi="${x.t}" aria-label="Delete weigh-in">&times;</button></span></li>`).join('')}</ul>` : ''}</div>` : ''}`;
     $$('#progSeg [data-range]').forEach(b => b.onclick = () => { progRange = +b.dataset.range; renderProgress(); });
@@ -1170,6 +1229,7 @@ window.MacrosApp = { start(ctx) {
       const custom = e.target.value === 'custom'; $('#wiCustomWrap').hidden = !custom;
       if (!custom) { settings.weighEvery = +e.target.value; saveSettings(); renderProgress(); }
     };
+    $('#wiTime').onchange = e => { if (e.target.value) { settings.weighTime = e.target.value; saveSettings(); renderProgress(); } };
     $('#wiCustom').onchange = e => { const d = Math.round(parseFloat(e.target.value)); if (d >= 1 && d <= 90) { settings.weighEvery = d; saveSettings(); renderProgress(); } };
     $$('[data-wi]', $('#progressBody')).forEach(b => b.onclick = () => {
       if (!confirm('Delete this weigh-in?')) return;
@@ -1187,6 +1247,187 @@ window.MacrosApp = { start(ctx) {
       settings.targets = phaseTargets(ph.type); settings.locks = {}; syncPhase(); saveSettings(); updatePill();
       toast(`New target: ${k0(settings.targets.kcal)} kcal · ${settings.targets.p} g protein`);
     } } : null);
+  }
+
+  // ==========================================================
+  // WATER · DASHBOARD WEEK · TUTORIAL
+  // ==========================================================
+  // Water: tap the glass to log one; the glass fills toward your daily goal
+  const waterCfg = () => Object.assign({ goal: 8, ml: 250 }, settings.water);
+  const GLASS_PATH = 'M7 4h26l-3.2 38.4A3 3 0 0 1 26.8 45H13.2a3 3 0 0 1-3-2.6L7 4Z';
+  const glassSvg = fill => `<svg viewBox="0 0 40 48" width="44" height="52" aria-hidden="true"><defs><clipPath id="glassClip"><path d="${GLASS_PATH}"/></clipPath></defs>
+    <rect x="0" y="${(4 + 41 * (1 - fill)).toFixed(1)}" width="40" height="48" class="glass-water" clip-path="url(#glassClip)"/><path d="${GLASS_PATH}" class="glass-edge"/></svg>`;
+  function renderWater() {
+    const d = curDay(), c = waterCfg(), n = d.water || 0;
+    $('#water').innerHTML = `<button class="glass-btn" type="button" id="waterAdd" aria-label="Log one glass of water (${c.ml} ml)">${glassSvg(Math.min(n / c.goal, 1))}</button>
+      <div class="water-txt"><b>${n} of ${c.goal} glasses</b><small>${k0(n * c.ml)} ml today · tap the glass after each one</small></div>
+      ${n ? '<button class="icon-btn" type="button" id="waterUndo" aria-label="Remove one glass">&minus;</button>' : ''}`;
+    $('#waterAdd').onclick = () => {
+      d.water = n + 1; saveDays(); renderWater(); $('#waterAdd').classList.add('pop');
+      if (d.water === c.goal) toast('Water goal reached. Nice!');
+    };
+    if (n) $('#waterUndo').onclick = () => { d.water = Math.max(0, n - 1); saveDays(); renderWater(); };
+  }
+
+  // Dashboard: "Today" and "This week" pages; tap the switch or swipe sideways
+  let dashPage = 'day', weekOffset = 0;
+  function showDash(page) {
+    dashPage = page; $('#pageDay').hidden = page !== 'day'; $('#pageWeek').hidden = page !== 'week';
+    $$('#dashSeg button').forEach(b => { const on = b.dataset.page === page; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
+    if (page === 'week') renderWeek(); else renderDay();
+  }
+  $('#dashSeg').addEventListener('click', e => { const b = e.target.closest('[data-page]'); if (b) { if (b.dataset.page === 'week') weekOffset = 0; showDash(b.dataset.page); } });
+  let swX = null, swY = null;
+  $('#view-day').addEventListener('touchstart', e => { const t = e.touches[0]; swX = t.clientX; swY = t.clientY; }, { passive: true });
+  $('#view-day').addEventListener('touchend', e => {
+    if (swX == null) return; const t = e.changedTouches[0]; const dx = t.clientX - swX, dy = t.clientY - swY; swX = null;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5 || e.target.closest('input, textarea, select')) return;
+    if (dx < 0 && dashPage === 'day') { weekOffset = 0; showDash('week'); } else if (dx > 0 && dashPage === 'week') showDash('day');
+  });
+
+  // Monday-to-Sunday week; each Day counts on the date it started
+  function weekData(offset) {
+    const mon = new Date(); mon.setHours(0, 0, 0, 0); mon.setDate(mon.getDate() - (mon.getDay() + 6) % 7 + offset * 7);
+    const per = Array.from({ length: 7 }, (_, i) => {
+      const dt = new Date(mon); dt.setDate(dt.getDate() + i); const d = dt.getTime();
+      const list = days.filter(x => dayStart(x.start) === d);
+      return { d, t: E.sumMacros(list.flatMap(x => x.entries)), logged: list.some(x => x.entries.length), idx: list.length ? days.indexOf(list[list.length - 1]) : -1,
+        water: list.reduce((a, x) => a + (x.water || 0), 0), future: d > Date.now() };
+    });
+    return { mon: mon.getTime(), per };
+  }
+  function weekBars(per, target) {
+    const W = 320, H = 150, L = 4, R = 4, T = 18, B = 22;
+    const max = Math.max(target * 1.15, ...per.map(p => p.t.kcal)) || 1;
+    const slot = (W - L - R) / 7, bw = slot * 0.56, Y = v => T + (1 - v / max) * (H - T - B), base = H - B;
+    const today = dayStart(Date.now());
+    const bar = (x, y) => { const r = Math.min(4, base - y); return `M${x},${base} V${(y + r).toFixed(1)} Q${x},${y.toFixed(1)} ${x + r},${y.toFixed(1)} H${(x + bw - r).toFixed(1)} Q${(x + bw).toFixed(1)},${y.toFixed(1)} ${(x + bw).toFixed(1)},${(y + r).toFixed(1)} V${base} Z`; };
+    const best = per.reduce((a, p, i) => p.t.kcal > per[a].t.kcal ? i : a, 0);
+    return `<svg class="week-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Calories per day this week">
+      <line x1="${L}" x2="${W - R}" y1="${base}" y2="${base}" class="grid"/>
+      <line x1="${L}" x2="${W - R}" y1="${Y(target).toFixed(1)}" y2="${Y(target).toFixed(1)}" class="target-line"/>
+      <text x="${W - R}" y="${(Y(target) - 5).toFixed(1)}" class="axis" text-anchor="end">target ${k0(target)}</text>
+      ${per.map((p, i) => {
+        const x = L + i * slot + (slot - bw) / 2; const label = new Date(p.d).toLocaleDateString(undefined, { weekday: 'narrow' });
+        const tip = `${new Date(p.d).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}: ${p.logged ? k0(p.t.kcal) + ' kcal' : 'not logged'}`;
+        return `<g${p.idx >= 0 ? ` data-goday="${p.idx}" class="bar-hit"` : ''}><title>${tip}</title><rect x="${L + i * slot}" y="${T}" width="${slot}" height="${H - T}" fill="transparent"/>
+          ${p.t.kcal > 0 ? `<path d="${bar(x, Y(p.t.kcal))}" class="kcal-bar${p.d === today ? ' today' : ''}"/>` : ''}
+          ${p.t.kcal > 0 && i === best ? `<text x="${(x + bw / 2).toFixed(1)}" y="${(Y(p.t.kcal) - 5).toFixed(1)}" class="axis val" text-anchor="middle">${k0(p.t.kcal)}</text>` : ''}
+          <text x="${(x + bw / 2).toFixed(1)}" y="${H - 6}" class="axis${p.d === today ? ' strong' : ''}" text-anchor="middle">${label}</text></g>`;
+      }).join('')}
+    </svg>`;
+  }
+  function renderWeek() {
+    const { mon, per } = weekData(weekOffset), T = settings.targets;
+    const md = ts => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const logged = per.filter(p => p.logged); const tot = E.sumMacros(logged.map(p => p.t)); const n = logged.length || 1;
+    const water = per.reduce((a, p) => a + p.water, 0);
+    $('#pageWeek').innerHTML = `
+      <div class="day-nav">
+        <button class="icon-btn" type="button" data-wk="-1" aria-label="Previous week">&#8249;</button>
+        <div class="day-title"><h1>${weekOffset === 0 ? 'This week' : weekOffset === -1 ? 'Last week' : 'Week of ' + md(mon)}</h1><small>${md(mon)} – ${md(mon + 6 * DAY_MS)}</small></div>
+        <button class="icon-btn" type="button" data-wk="1" aria-label="Next week"${weekOffset >= 0 ? ' disabled' : ''}>&#8250;</button>
+      </div>
+      <div class="card">
+        <div class="eyebrow">Calories this week</div>
+        <div class="kcal-big" style="margin-top:4px">${k0(tot.kcal)}<span>kcal</span></div>
+        <p class="muted small" style="margin:6px 0 0">${logged.length ? `Average <b>${k0(tot.kcal / n)}</b> a day over ${logged.length} logged day${logged.length === 1 ? '' : 's'} · target ${k0(T.kcal)} a day` : 'Nothing logged this week yet.'}</p>
+        ${weekBars(per, T.kcal)}
+      </div>
+      <div class="card" style="margin-top:12px"><div class="eyebrow">Macros this week</div>
+        <div class="macro-grid">${MACROS.map(x => `<div class="mtile"><div class="lab"><i class="dot-${x.cls}"></i>${x.label}</div>
+          <div class="val">${fmt(tot[x.k], 0)}<small>g</small></div><div class="sub">${logged.length ? `${fmt(tot[x.k] / n, 0)} g a day · target ${fmt(T[x.k], 0)}` : `target ${fmt(T[x.k], 0)} g a day`}</div></div>`).join('')}</div>
+        <p class="muted small" style="margin:12px 0 0">Water: <b>${water}</b> glasses this week (${k0(water * waterCfg().ml)} ml).</p>
+      </div>
+      <h3 class="section-title">Day by day</h3>
+      <div class="card week-days">${per.map(p => `<${p.idx >= 0 ? `button type="button" data-goday="${p.idx}"` : 'div'} class="wk-row${p.logged ? '' : ' empty'}">
+          <span class="wk-date"><b>${new Date(p.d).toLocaleDateString(undefined, { weekday: 'short' })}</b><small>${md(p.d)}</small></span>
+          <span class="wk-main">${p.logged ? mchips(p.t, false) : `<small class="muted">${p.future ? 'Coming up' : 'Not logged'}</small>`}</span>
+          <span class="wk-kcal">${p.logged ? k0(p.t.kcal) : ''}</span></${p.idx >= 0 ? 'button' : 'div'}>`).join('')}</div>
+      ${reminderBtn('day')}`;
+    $$('[data-wk]', $('#pageWeek')).forEach(b => b.onclick = () => { weekOffset = Math.min(0, weekOffset + +b.dataset.wk); renderWeek(); });
+    $$('[data-goday]', $('#pageWeek')).forEach(b => b.addEventListener('click', () => { viewIdx = +b.dataset.goday; showDash('day'); window.scrollTo(0, 0); }));
+  }
+
+  // Tutorial: a guided tour plus a first-week checklist (ticks itself where it can tell)
+  const TOUR = [
+    { t: 'Your Dashboard', go: '#day', b: 'The ring shows calories eaten against your target, and the bars show protein, carbs, fat and fiber. Tap the calories at the top right to see what’s <b>left</b>. Swipe left (or tap <b>This week</b>) for Monday to Sunday.' },
+    { t: 'Add what you eat', go: '#add', b: 'Type or tap the mic: <i>“2 eggs and 1 cup rice”</i>, <i>“150 g chicken breast”</i>, or by calories: <i>“300 kcal nuggets”</i>. Check each match, switch <b>Cooked / Raw</b> if needed, then tap <b>Add to Day</b>.' },
+    { t: 'Browse foods', go: '#add', b: 'Below the box you can browse every food. Tap <b>Protein</b>, <b>Carbs</b>, <b>Fat</b> or <b>Fiber</b> to see the best sources. Silog meals let you change each part, like adding an extra hotdog.' },
+    { t: 'Drink water', go: '#add', b: 'Tap the glass on the Add page after every glass of water. Set your daily goal and glass size in Menu → Settings.' },
+    { t: 'Notes and new days', go: '#day', b: 'Tap the note icon next to a meal to write how it went. When your day ends, tap <b>Start Day 2</b>. Days never change by themselves at midnight.' },
+    { t: 'Goals and phases', go: '#goals', b: 'Menu → Goals holds your targets. Change calories and the macros follow; type a macro to lock it. Add phases like Bulking, Cutting or Hyrox and switch whenever your plan changes.' },
+    { t: 'Progress and weigh-ins', go: '#progress', b: 'Menu → Progress shows days logged, your averages and your weight trend. Weigh in at the same time each time; the trend line smooths out daily ups and downs.' },
+    { t: 'Stuck? Look for Reminder', go: '#day', b: 'Every page has a <b>Reminder</b> button at the bottom with a quick explanation. You can replay this tour any time from Menu → Tutorial.' },
+  ];
+  const finishedDays = () => days.filter(d => d !== curDay() && d.entries.length).length;
+  const CHECKS = [
+    { when: 'Day 1 · get started', items: [
+      { k: 'setup', t: 'Answer the setup questions', auto: () => !!settings.setupDone },
+      { k: 'food', t: 'Log your first meal', go: '#add', auto: () => days.some(d => d.entries.length) },
+      { k: 'water', t: 'Tap the water glass', go: '#add', auto: () => days.some(d => d.water) },
+      { k: 'tour', t: 'Take the tour', auto: () => !!(settings.tour && settings.tour.seen) },
+    ] },
+    { when: 'End of day 1', items: [
+      { k: 'day2', t: 'Tap Start Day 2 on the Dashboard', go: '#day', auto: () => days.length > 1 },
+    ] },
+    { when: 'Days 2–3', items: [
+      { k: 'note', t: 'Add a note to a meal', go: '#day', auto: () => days.some(d => d.notes && Object.keys(d.notes).length) },
+      { k: 'kcal', t: 'Log a food by calories (“300 kcal rice”)', go: '#add', auto: () => days.some(d => d.entries.some(e => / kcal\)/.test(e.amt || ''))) },
+      { k: 'sources', t: 'Find a protein source in Browse foods', go: '#add' },
+    ] },
+    { when: 'After 3 full days', items: [
+      { k: 'progress', t: 'Check your averages in Progress', go: '#progress', auto: () => finishedDays() >= 3 && !!(settings.tour && settings.tour.progressSeen) },
+      { k: 'targets', t: 'Fine-tune your targets in Goals if needed', go: '#goals' },
+    ] },
+    { when: 'End of week 1', items: [
+      { k: 'weigh', t: 'Do your first weekly weigh-in', go: '#progress', auto: () => (settings.weighIns || []).length >= 2 },
+      { k: 'week', t: 'Look at This week on the Dashboard', go: '#day' },
+      { k: 'phase', t: 'Optional: add a phase (Bulking, Cutting, Hyrox…)', go: '#goals', auto: () => (settings.phases || []).length > 1 },
+    ] },
+  ];
+  const isDone = it => !!((settings.tour && settings.tour.done && settings.tour.done[it.k]) || (it.auto && it.auto()));
+  function tourProgress() { const all = CHECKS.flatMap(g => g.items); return { done: all.filter(isDone).length, total: all.length }; }
+  function renderTutorial() {
+    const pr = tourProgress();
+    $('#tutorialBody').innerHTML = `
+      <div class="card settings-card"><h2>Quick tour</h2>
+        <p class="muted small" style="margin:0">Eight short steps that show every part of maCros. About 2 minutes.</p>
+        <div class="row-actions"><button class="btn" type="button" id="tourStart">Start the tour</button></div></div>
+      <div class="card settings-card"><div class="card-head"><h2>Your first week</h2><span class="muted small">${pr.done} of ${pr.total} done</span></div>
+        <div class="bar" style="margin:0 0 6px"><span style="width:${pr.done / pr.total * 100}%;background:var(--accent-bright)"></span></div>
+        ${CHECKS.map(g => `<div class="tl-group"><div class="tl-when">${g.when}</div>${g.items.map(it => {
+          const done = isDone(it);
+          return `<div class="tl-item${done ? ' done' : ''}"><button type="button" class="tl-check" data-check="${it.k}" aria-pressed="${done}" aria-label="Mark “${esc(it.t)}” ${done ? 'not done' : 'done'}"${it.auto && it.auto() ? ' disabled' : ''}></button>
+            <span>${esc(it.t)}</span>${it.go && !done ? `<a class="tl-go" href="${it.go}">Go</a>` : ''}</div>`;
+        }).join('')}</div>`).join('')}
+      </div>
+      <div class="card settings-card"><h2>Every week after that</h2>
+        <ul class="legend-list"><li>Weigh in at your usual time and watch the <b>trend line</b>, not single readings.</li>
+          <li>Check <b>This week</b> on the Dashboard: are calories and protein close to target most days?</li>
+          <li>When maCros offers <b>Update targets</b> after a weigh-in, take it so your numbers follow your new weight.</li>
+          <li>Plan changing? Switch your <b>phase</b> in Goals.</li></ul></div>`;
+    $('#tourStart').onclick = () => openTour(0);
+    $$('[data-check]', $('#tutorialBody')).forEach(b => b.onclick = () => {
+      const tour = Object.assign({ done: {} }, settings.tour); tour.done = Object.assign({}, tour.done);
+      tour.done[b.dataset.check] = !tour.done[b.dataset.check]; settings.tour = tour; saveSettings(); renderTutorial();
+    });
+  }
+  function openTour(i) {
+    const st = TOUR[i];
+    openSheet(`${sheetHead(`${i + 1}. ${st.t}`, `Step ${i + 1} of ${TOUR.length}`)}
+      <div class="tour-dots" aria-hidden="true">${TOUR.map((_, j) => `<i class="${j <= i ? 'on' : ''}"></i>`).join('')}</div>
+      <p class="tour-body">${st.b}</p>
+      <div class="add-row">${i > 0 ? '<button class="btn ghost" type="button" id="tourBack">Back</button>' : ''}
+        <button class="btn grow" type="button" id="tourNext">${i < TOUR.length - 1 ? 'Next' : 'Finish'}</button></div>
+      <div class="row-actions"><button class="btn ghost small" type="button" id="tourShow">Show me this page</button></div>`);
+    if (i > 0) $('#tourBack').onclick = () => openTour(i - 1);
+    $('#tourNext').onclick = () => {
+      if (i < TOUR.length - 1) return openTour(i + 1);
+      settings.tour = Object.assign({}, settings.tour, { seen: true, hide: true }); saveSettings(); closeSheet();
+      toast('Tour done. Your first-week checklist is in Menu → Tutorial.'); route();
+    };
+    $('#tourShow').onclick = () => { closeSheet(); if (location.hash === st.go) route(); else location.hash = st.go; };
   }
 
   // ---------- Setup (body stats + goal → targets) ----------

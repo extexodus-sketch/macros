@@ -18,22 +18,30 @@
   <div class="setup" id="setup" hidden></div>
   <div class="app" id="app" hidden>
     <header class="topbar">
+      <span aria-hidden="true"></span>
       <a class="brand" href="#day" aria-label="maCros home">
-        <img src="icon.svg" alt="" width="34" height="34">
-        <span><strong>maCros</strong></span>
+        <img src="icon.svg" alt="" width="40" height="40">
+        <span>maCros</span>
       </a>
       <button class="today-pill" type="button" id="todayPill" title="Tap to switch between eaten and left">Day 1 · 0 kcal</button>
     </header>
 
     <main>
-      <!-- TODAY -->
+      <!-- DASHBOARD: swipe between Today and This week -->
       <section id="view-day" class="view">
-        <div class="day-nav">
-          <button class="icon-btn" id="dayPrev" type="button" aria-label="Previous day">&#8249;</button>
-          <div class="day-title"><h1 id="dayTitle">Today</h1><small id="daySub"></small></div>
-          <button class="icon-btn" id="dayNext" type="button" aria-label="Next day">&#8250;</button>
+        <div class="seg two dash-seg" id="dashSeg" role="tablist" aria-label="Dashboard pages">
+          <button type="button" role="tab" class="on" aria-selected="true" data-page="day">Today</button>
+          <button type="button" role="tab" aria-selected="false" data-page="week">This week</button>
         </div>
-        <div id="dayBody"></div>
+        <div id="pageDay" class="dash-page">
+          <div class="day-nav">
+            <button class="icon-btn" id="dayPrev" type="button" aria-label="Previous day">&#8249;</button>
+            <div class="day-title"><h1 id="dayTitle">Today</h1><small id="daySub"></small></div>
+            <button class="icon-btn" id="dayNext" type="button" aria-label="Next day">&#8250;</button>
+          </div>
+          <div id="dayBody"></div>
+        </div>
+        <div id="pageWeek" class="dash-page" hidden></div>
       </section>
 
       <!-- ADD: type or say it on top, browse foods below -->
@@ -50,6 +58,7 @@
           </div>
           <p class="voice-status" id="voiceStatus" aria-live="polite"></p>
         </div>
+        <div class="water" id="water"></div>
         <div id="results" aria-live="polite"></div>
         <div id="browse">
           <div class="foods-head">
@@ -81,6 +90,10 @@
         <div class="sub-head"><a class="icon-btn" href="#menu" aria-label="Back to menu">&#8249;</a><h1>Progress</h1></div>
         <div id="progressBody"></div>
       </section>
+      <section id="view-tutorial" class="view" hidden>
+        <div class="sub-head"><a class="icon-btn" href="#menu" aria-label="Back to menu">&#8249;</a><h1>Tutorial</h1></div>
+        <div id="tutorialBody"></div>
+      </section>
       <section id="view-settings" class="view" hidden>
         <div class="sub-head"><a class="icon-btn" href="#menu" aria-label="Back to menu">&#8249;</a><h1>Settings</h1></div>
         <div id="settingsBody"></div>
@@ -88,7 +101,7 @@
     </main>
 
     <nav class="tabbar" aria-label="Main">
-      <a href="#day" data-tab="day"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h1V3a1 1 0 0 1 1-1Zm13 8H4v9a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-9Z"/></svg><span>Today</span></a>
+      <a href="#day" data-tab="day"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h1V3a1 1 0 0 1 1-1Zm13 8H4v9a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-9Z"/></svg><span>Dashboard</span></a>
       <a href="#add" data-tab="add"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20Zm0 5a1 1 0 0 0-1 1v3H8a1 1 0 1 0 0 2h3v3a1 1 0 1 0 2 0v-3h3a1 1 0 1 0 0-2h-3V8a1 1 0 0 0-1-1Z"/></svg><span>Add</span></a>
       <a href="#menu" data-tab="menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 6a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 6a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm1 5a1 1 0 1 0 0 2h14a1 1 0 1 0 0-2H5Z"/></svg><span>Menu</span></a>
     </nav>
