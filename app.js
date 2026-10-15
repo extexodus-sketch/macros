@@ -22,13 +22,14 @@ window.MacrosApp = { start(ctx) {
       if (ctx.onSave) ctx.onSave(k, v);
     },
   };
-  // Bulking targets: 2,332 kcal / 129 g protein (given); fat 25% of kcal; carbs fill the rest; fiber 14 g per 1,000 kcal.
-  const DEFAULTS = { targets: { kcal: 2332, p: 129, c: 308, f: 65, fib: 33 }, voiceLang: 'en-PH', theme: 'auto', lastMeal: 'Breakfast' };
+  // Placeholder targets until the person finishes setup (setup.js works out their own).
+  const DEFAULTS = { targets: { kcal: 2000, p: 100, c: 250, f: 56, fib: 28 }, voiceLang: 'en-PH', theme: 'light', lastMeal: 'Breakfast', pill: 'eaten' };
   const OLD_DEFAULT_TARGETS = { kcal: 2000, p: 140, c: 200, f: 65, fib: 30 };
   function readSettings() {
     const st = Object.assign({}, DEFAULTS, store.get('settings', {}));
     if (!st.targets || JSON.stringify(st.targets) === JSON.stringify(OLD_DEFAULT_TARGETS)) st.targets = { ...DEFAULTS.targets };
     st.targets = Object.assign({}, DEFAULTS.targets, st.targets);
+    if (!st.lightV2) { if (st.theme === 'auto') st.theme = 'light'; st.lightV2 = true; }   // the lighter palette became the default
     delete st.dayStart;
     return st;
   }
@@ -99,6 +100,34 @@ window.MacrosApp = { start(ctx) {
     return `<div class="split" aria-hidden="true">
       <span class="dot-p" style="width:${m.p * 4 / kc * 100}%"></span><span class="dot-c" style="width:${m.c * 4 / kc * 100}%"></span><span class="dot-f" style="width:${m.f * 9 / kc * 100}%"></span></div>`;
   }
+  // Macro values as small bordered chips in each macro's colour
+  const MSHORT = { p: 'P', c: 'C', f: 'F', fib: 'Fib' };
+  const mchips = (m, long) => `<span class="mchips">${MACROS.map(x => `<span class="mchip ${x.cls}">${long ? x.label : MSHORT[x.k]} <b>${fmt(m[x.k])}</b>${long ? ' g' : ''}</span>`).join('')}</span>`;
+
+  // "Reminder" link at the bottom of a page; tapping it shows that page's notes
+  const reminderBtn = page => `<div class="reminder-row"><button class="reminder-link" type="button" data-reminder="${page}"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20Zm0 8a1 1 0 0 0-1 1v5a1 1 0 1 0 2 0v-5a1 1 0 0 0-1-1Zm0-4a1.25 1.25 0 1 0 0 2.5A1.25 1.25 0 0 0 12 6Z"/></svg>Reminder</button></div>`;
+  function openReminder(page) {
+    const verified = E.all().filter(f => !f.sugg).length;
+    const body = {
+      identify: `<ol class="steps">
+          <li><b class="n">1</b><div><b>Type or tap the mic</b> and say what you ate, with amounts: <span class="muted">“150 grams lean ground pork and one cup of rice”</span>. English, Tagalog or Taglish all work.</div></li>
+          <li><b class="n">2</b><div><b>Check the matches.</b> Fix any amount, switch between cooked and raw, or pick a different food. No amount? It assumes 1 normal serving and tells you.</div></li>
+          <li><b class="n">3</b><div><b>Add to your day</b> for a running total. Made your own sauce? Type its ingredients and tap <b>Save as recipe</b>.</div></li>
+        </ol>
+        <p class="muted small" style="margin:14px 0 0">Weights are <b>cooked, as eaten</b> unless you pick raw. Calculations use only USDA, FNRI and label values (${verified} foods). Estimates sit separately in Foods → Suggestions.</p>`,
+      day: `<ul class="legend-list"><li>Days only change when you tap <b>Start Day ${curDay().n + 1}</b>, never at midnight.</li>
+          <li>Tap the calories at the top right to switch between what you’ve eaten and what’s left.</li>
+          <li>You can go back to past days with the arrows and still edit them.</li>
+          <li>Your targets come from your setup. Change them any time in Settings.</li></ul>`,
+      foods: `<ul class="legend-list"><li><b>Database:</b> verified values (USDA, FNRI, labels), plus your own foods and recipes. Typing on Identify matches against these.</li>
+          <li><b>Suggestions:</b> recipe-based estimates with no official lab value. They’re never used on their own; tap one to use it on purpose.</li>
+          <li><b>My Eats:</b> everything you’ve logged, most recent first. Tap one to log the same amount again.</li>
+          <li>Tap a category name to open or close it.</li></ul>`,
+    }[page];
+    openSheet(`${sheetHead('Reminder')}${body}`);
+  }
+  document.addEventListener('click', e => { const b = e.target.closest('[data-reminder]'); if (b) openReminder(b.dataset.reminder); });
+
   const mealSelect = (id, sel) => `<select class="select" id="${id}" aria-label="Meal">${MEALS.map(m => `<option${m === sel ? ' selected' : ''}>${m}</option>`).join('')}</select>`;
   const unitOptions = (food, unit) => E.unitsFor(food).map(u => `<option value="${u.key}"${u.key === unit ? ' selected' : ''}>${u.key === 'g' ? 'grams' : esc(E.unitLabel(u.key, 1)) + ' (' + fmt(u.grams, 0) + ' g)'}</option>`).join('')
     + (unit && !food.units[unit] && unit !== 'g' ? `<option value="${unit}" selected>${esc(E.unitLabel(unit, 1))}</option>` : '');
@@ -132,24 +161,22 @@ window.MacrosApp = { start(ctx) {
     window.scrollTo(0, 0);
   }
   window.addEventListener('hashchange', route);
+  // Top-right pill: tap to switch between calories eaten and calories left
   function updatePill() {
-    const d = curDay(); const tot = E.sumMacros(d.entries);
-    $('#todayPill').textContent = `Day ${d.n} · ${k0(tot.kcal)} kcal`;
+    const d = curDay(); const tot = E.sumMacros(d.entries); const left = settings.targets.kcal - tot.kcal;
+    const pill = $('#todayPill');
+    pill.textContent = settings.pill === 'left'
+      ? `Day ${d.n} · ${left >= 0 ? k0(left) + ' kcal left' : k0(-left) + ' kcal over'}`
+      : `Day ${d.n} · ${k0(tot.kcal)} kcal`;
+    pill.classList.toggle('left', settings.pill === 'left');
   }
+  $('#todayPill').addEventListener('click', () => { settings.pill = settings.pill === 'left' ? 'eaten' : 'left'; saveSettings(); updatePill(); });
 
   // ==========================================================
   // IDENTIFY
   // ==========================================================
   const q = $('#q');
   let items = [], parsedMeal = null, typingT;
-  const EXAMPLES = [
-    '150g lean ground pork, 1 cup rice',
-    '1 cup cinnamon toast crunch with 1 cup milk',
-    '200g chicken breast, 1 tbsp sriracha, 1 tbsp hoisin',
-    '200g 93% lean ground beef and 1.5 cups rice',
-    '2 pandesal, 2 eggs, 1 banana',
-    'isang tasang kanin at 150g chicken breast',
-  ];
 
   q.addEventListener('input', () => { autosize(); clearTimeout(typingT); typingT = setTimeout(identify, 160); });
   q.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addCurrent(); } });
@@ -188,7 +215,24 @@ window.MacrosApp = { start(ctx) {
       ${est ? '<div class="note">Includes an estimate from Suggestions, so this total is approximate.</div>' : ''}
       <div class="add-row">${mealSelect('mealSel', parsedMeal || defaultMeal())}<button class="btn grow" type="button" data-act="add">Add to Day ${curDay().n}</button></div>`;
   }
-  const itemMacrosHtml = m => MACROS.map(x => `<span><i class="dot-${x.cls}"></i>${x.label} <b>${fmt(m[x.k])}g</b></span>`).join('');
+  const itemMacrosHtml = m => mchips(m, true);
+
+  // Cooked ⇄ raw twins: foods whose names match apart from the raw/uncooked/cooked/dry word
+  let twins = null;
+  const baseName = n => n.toLowerCase().replace(/\b(raw|uncooked|cooked|dry)\b/g, ' ').replace(/[(),]/g, ' ').replace(/\s+/g, ' ').trim();
+  function twinOf(f) {
+    if (!twins) {
+      twins = new Map(); const groups = {};
+      E.all().forEach(x => { if (!x.sugg && !x.parts && !x.custom) (groups[baseName(x.name)] = groups[baseName(x.name)] || []).push(x); });
+      Object.values(groups).forEach(list => {
+        const raw = list.filter(x => x.raw), cooked = list.filter(x => !x.raw);
+        if (raw.length === 1 && cooked.length === 1) { twins.set(raw[0].id, cooked[0]); twins.set(cooked[0].id, raw[0]); }
+      });
+    }
+    return twins.get(f.id);
+  }
+  const stateToggle = f => twinOf(f) ? `<div class="seg mini state" role="group" aria-label="Cooked or raw">
+      <button type="button" class="${f.raw ? '' : 'on'}" data-act="state" data-raw="0">Cooked</button><button type="button" class="${f.raw ? 'on' : ''}" data-act="state" data-raw="1">Raw</button></div>` : '';
   function itemCard(it, i) {
     if (it.kind === 'unknown') {
       const sug = it.fromSugg || [];
@@ -217,6 +261,7 @@ window.MacrosApp = { start(ctx) {
         <input class="input qty" type="number" inputmode="decimal" min="0" step="any" value="${Math.round(it.qty * 100) / 100}" aria-label="Amount">
         <select class="select unit" aria-label="Unit">${unitOptions(it.food, it.unit)}</select>
         <span class="grams" data-k="grams">${it.unit === 'g' ? '' : '= ' + fmt(it.grams, 0) + ' g'}</span>
+        ${stateToggle(it.food)}
       </div>
       <div class="item-macros" data-k="macros">${itemMacrosHtml(m)}</div>
       ${alts ? `<div class="item-foot"><span>You typed “${esc(it.query)}”</span>${alts}</div>` : ''}
@@ -261,12 +306,19 @@ window.MacrosApp = { start(ctx) {
   $('#results').addEventListener('click', e => {
     const b = e.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act;
-    if (act === 'example') return setQuery(b.dataset.q);
     if (act === 'recent') { const f = E.byId(b.dataset.id); if (f) appendQuery(`${defaultAmountText(f)} ${f.key}`); return; }
     if (act === 'add') return addCurrent();
     if (act === 'recipe') return openRecipeForm();
     const card = b.closest('[data-i]'); const i = card ? +card.dataset.i : -1; const it = items[i];
     if (act === 'remove') { items.splice(i, 1); if (!items.length) { q.value = ''; autosize(); } renderResults(); }
+    if (act === 'state') {
+      const wantRaw = b.dataset.raw === '1'; if (!!it.food.raw === wantRaw) return;
+      const f = twinOf(it.food); if (!f) return;
+      // Same weight, other state: you weighed it raw or you weighed it cooked
+      const a = it.unit === 'g' || f.units[it.unit] ? E.amount(f, it.qty, it.unit) : E.amount(f, Math.round(it.grams), 'g');
+      Object.assign(it, { food: f, qty: a.qty, unit: a.unit, grams: a.grams, note: a.note });
+      renderResults();
+    }
     if (act === 'pick') {
       const f = E.byId(b.dataset.id); const n = (it.qty || 1) * (it.mult || 1);
       if (f.parts) items.splice(i, 1, ...E.expandCombo(f, n));
@@ -282,16 +334,9 @@ window.MacrosApp = { start(ctx) {
   function emptyState() {
     const rec = recent.map(id => E.byId(id)).filter(Boolean).slice(0, 8);
     return `<div class="empty">
-      ${rec.length ? `<h3 class="section-title">Recent — tap to add</h3><div class="chips">${rec.map(f => `<button class="chip" type="button" data-act="recent" data-id="${esc(f.id)}">${esc(f.name)}</button>`).join('')}</div>` : ''}
-      <h3 class="section-title">Try one of these</h3>
-      <div class="chips">${EXAMPLES.map(x => `<button class="chip" type="button" data-act="example" data-q="${esc(x)}">${esc(x)}</button>`).join('')}</div>
-      <h3 class="section-title">How it works</h3>
-      <div class="card"><ol class="steps">
-        <li><b class="n">1</b><div><b>Type or tap the mic</b> and say what you ate, with amounts: <span class="muted">“150 grams lean ground pork and one cup of rice”</span>. English, Tagalog or Taglish all work.</div></li>
-        <li><b class="n">2</b><div><b>Check the matches.</b> Fix any amount or pick a different food. No amount? It assumes 1 normal serving and tells you.</div></li>
-        <li><b class="n">3</b><div><b>Add to your day</b> for a running total. Made your own sauce? Type its ingredients and tap <b>Save as recipe</b>.</div></li>
-      </ol></div>
-      <p class="muted small" style="margin:14px 4px">Weights are <b>cooked, as eaten</b>; add “raw” for raw weights. Calculations use only USDA, FNRI and label values (${E.all().filter(f => !f.sugg).length} foods). Estimates sit separately in Foods → Suggestions.</p>
+      ${rec.length ? `<h3 class="section-title">Recent — tap to add</h3><div class="chips">${rec.map(f => `<button class="chip" type="button" data-act="recent" data-id="${esc(f.id)}">${esc(f.name)}</button>`).join('')}</div>`
+        : '<p class="muted" style="margin:18px 4px">Foods you add will show up here so you can tap them next time.</p>'}
+      ${reminderBtn('identify')}
     </div>`;
   }
 
@@ -344,14 +389,14 @@ window.MacrosApp = { start(ctx) {
     const over = target && value > target;
     return `<div class="ring"><svg viewBox="0 0 120 120" width="100%" height="100%">
       <circle cx="60" cy="60" r="${r}" fill="none" stroke="var(--surface-2)" stroke-width="12"/>
-      <circle cx="60" cy="60" r="${r}" fill="none" stroke="${over ? 'var(--danger)' : 'var(--accent)'}" stroke-width="12" stroke-linecap="round"
+      <circle cx="60" cy="60" r="${r}" fill="none" stroke="${over ? 'var(--danger)' : 'var(--accent-bright)'}" stroke-width="12" stroke-linecap="round"
         stroke-dasharray="${c * pct} ${c}"/></svg>
       <div class="ring-txt"><div><b>${k0(value)}</b><small>of ${k0(target)} kcal</small></div></div></div>`;
   }
   function renderDay() {
     const day = days[viewIdx]; const isCur = viewIdx === days.length - 1;
     $('#dayTitle').textContent = `Day ${day.n}`;
-    $('#daySub').textContent = isCur ? `Current day · started ${when(day.start)}` : `${when(day.start)} – ${when(days[viewIdx + 1].start)}`;
+    $('#daySub').textContent = isCur ? 'Current day' : `${when(day.start)} – ${when(days[viewIdx + 1].start)}`;
     $('#dayPrev').disabled = viewIdx === 0; $('#dayNext').disabled = isCur;
     const entries = day.entries;
     const tot = E.sumMacros(entries); const T = settings.targets;
@@ -363,7 +408,7 @@ window.MacrosApp = { start(ctx) {
           <div class="bar"><span class="dot-${x.cls}" style="width:${pct}%"></span></div></div>`;
       }).join('')}
     </div></div>
-    <p class="muted small" style="margin:12px 0 0">${entries.length ? (left >= 0 ? `<b>${k0(left)} kcal</b> left to reach your target.` : `<b>${k0(-left)} kcal</b> over your target.`) + ` Protein to go: <b>${fmt(Math.max(T.p - tot.p, 0), 0)} g</b>.` : `Target: ${k0(T.kcal)} kcal · ${fmt(T.p, 0)} g protein (bulking). Change it in Settings.`}</p></div>`;
+    <p class="muted small" style="margin:12px 0 0">${entries.length ? (left >= 0 ? `<b>${k0(left)} kcal</b> left to reach your target.` : `<b>${k0(-left)} kcal</b> over your target.`) + ` Protein to go: <b>${fmt(Math.max(T.p - tot.p, 0), 0)} g</b>.` : `Target: ${k0(T.kcal)} kcal · ${fmt(T.p, 0)} g protein. Change it in Settings.`}</p></div>`;
 
     if (!entries.length) {
       html += `<div class="card" style="text-align:center;margin-top:12px"><p style="margin:4px 0 12px">Nothing logged on Day ${day.n} yet.</p>
@@ -374,15 +419,15 @@ window.MacrosApp = { start(ctx) {
         const mt = E.sumMacros(list);
         html += `<div class="meal-head"><h2>${meal}</h2><span>${k0(mt.kcal)} kcal · P ${fmt(mt.p, 0)} · C ${fmt(mt.c, 0)} · F ${fmt(mt.f, 0)}</span></div>
           <div class="card">${list.map(e => `<div class="entry" data-id="${esc(e.id)}">
-            <div class="e-main"><div class="e-name">${esc(e.name)}${e.est ? ' <span class="badge E">Estimate</span>' : ''}</div><div class="e-sub">${esc(e.amt)} · P ${fmt(e.p)} · C ${fmt(e.c)} · F ${fmt(e.f)} · Fiber ${fmt(e.fib)}</div></div>
+            <div class="e-main"><div class="e-name">${esc(e.name)}${e.est ? ' <span class="badge E">Estimate</span>' : ''}</div><div class="e-sub">${esc(e.amt)}</div>${mchips(e, false)}</div>
             <div class="e-kcal">${k0(e.kcal)}</div>
             <button class="remove" type="button" data-act="del" aria-label="Delete ${esc(e.name)}">&times;</button></div>`).join('')}</div>`;
       }
     }
     html += `<div class="today-actions">
-      ${isCur ? `<button class="btn outline grow" type="button" data-act="newday">Done with Day ${day.n} → start Day ${day.n + 1}</button>` : `<button class="btn ghost small" type="button" data-act="gocur">Go to current day (Day ${curDay().n})</button>`}
+      ${isCur ? `<button class="btn outline grow" type="button" data-act="newday">Start Day ${day.n + 1}</button>` : `<button class="btn ghost small" type="button" data-act="gocur">Go to current day (Day ${curDay().n})</button>`}
       ${entries.length ? '<button class="btn ghost small" type="button" data-act="copy">Copy day summary</button>' : ''}</div>
-      ${isCur ? '<p class="muted small" style="margin:10px 4px 0">Days only change when you tap this button, never at midnight.</p>' : ''}`;
+      ${reminderBtn('day')}`;
     $('#dayBody').innerHTML = html;
   }
   $('#dayBody').addEventListener('click', e => {
@@ -396,7 +441,7 @@ window.MacrosApp = { start(ctx) {
     }
     if (b.dataset.act === 'newday') {
       const cur = curDay();
-      if (!confirm(`Finish Day ${cur.n} and start Day ${cur.n + 1}? You can still view and edit past days.`)) return;
+      if (!confirm(`Start Day ${cur.n + 1}? Day ${cur.n} is saved, and you can still view and edit it.`)) return;
       days.push(newDay(cur.n + 1)); settings.lastMeal = 'Breakfast'; saveSettings(); saveDays();
       viewIdx = days.length - 1; updatePill(); renderDay();
       toast(`Day ${cur.n + 1} started`, { label: 'Undo', run: () => { if (curDay().entries.length) return; days.pop(); saveDays(); viewIdx = days.length - 1; updatePill(); renderDay(); } });
@@ -423,11 +468,19 @@ window.MacrosApp = { start(ctx) {
     'Desserts & Kakanin', 'Fast Food', 'Condiments & Fats', 'Supplements'];
   const MODES = { db: 'Database', sugg: 'Suggestions', eats: 'My Eats' };
   let foodCat = 'All', foodMode = 'db', foodT;
+  const openCats = new Set();   // categories opened in the "All" list (all start closed)
   $('#foodSearch').addEventListener('input', () => { clearTimeout(foodT); foodT = setTimeout(renderFoodList, 120); });
   $('#cats').addEventListener('click', e => { const b = e.target.closest('[data-cat]'); if (!b) return; foodCat = b.dataset.cat; renderFoods(); });
   $('#foodModes').addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (!b) return; foodMode = b.dataset.mode; foodCat = 'All'; renderFoods(); });
   $('#addCustomBtn').addEventListener('click', () => openCustomForm({}));
   $('#foodList').addEventListener('click', e => {
+    const h = e.target.closest('[data-toggle-cat]');
+    if (h) {
+      const c = h.dataset.toggleCat; const open = !openCats.has(c);
+      if (open) openCats.add(c); else openCats.delete(c);
+      h.setAttribute('aria-expanded', open); h.nextElementSibling.hidden = !open;
+      return;
+    }
     const b = e.target.closest('[data-id],[data-eat]'); if (!b) return;
     if (b.dataset.eat) openEat(b.dataset.eat); else openFood(b.dataset.id);
   });
@@ -439,9 +492,8 @@ window.MacrosApp = { start(ctx) {
     $('#cats').hidden = foodMode === 'eats';
     $('#cats').innerHTML = CATS.filter(c => c === 'All' || present.has(c)).map(c => `<button class="chip${c === foodCat ? ' on' : ''}" type="button" role="tab" aria-selected="${c === foodCat}" data-cat="${esc(c)}">${esc(c)}</button>`).join('');
     $('#foodSearch').placeholder = foodMode === 'eats' ? 'Search what you’ve eaten…' : foodMode === 'sugg' ? 'Search estimates (adobo, sinigang…)' : 'Search foods (chicken, kanin, whey…)';
-    $('#modeNote').innerHTML = foodMode === 'sugg' ? 'Recipe-based <b>estimates</b> with no official lab value. They never feed into calculations on their own; tap one to use it on purpose.'
-      : foodMode === 'eats' ? 'Everything you’ve logged, most recent first. Tap one to log the same amount again.'
-      : 'Verified values (USDA, FNRI, labels), plus your own foods and recipes. Typing matches against these.';
+    $('#modeNote').hidden = true;
+    $('#foodsFoot').innerHTML = reminderBtn('foods');
     renderFoodList();
   }
   function foodRow(f) {
@@ -485,7 +537,9 @@ window.MacrosApp = { start(ctx) {
     }
     if (!term && foodCat === 'All') {
       const groups = {}; foods.forEach(f => (groups[f.cat] = groups[f.cat] || []).push(f));
-      list.innerHTML = CATS.filter(c => groups[c]).map(c => `<div class="cat-head">${esc(c)}</div>${groups[c].map(foodRow).join('')}`).join('');
+      list.innerHTML = CATS.filter(c => groups[c]).map(c => `<button class="cat-head" type="button" data-toggle-cat="${esc(c)}" aria-expanded="${openCats.has(c)}">
+          <span>${esc(c)}</span><span class="cat-count">${groups[c].length}<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M6.3 9.3a1 1 0 0 1 1.4 0L12 13.6l4.3-4.3a1 1 0 1 1 1.4 1.4l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 0 1 0-1.4Z"/></svg></span></button>
+        <div class="cat-body"${openCats.has(c) ? '' : ' hidden'}>${groups[c].map(foodRow).join('')}</div>`).join('');
     } else list.innerHTML = foods.map(foodRow).join('');
   }
 
@@ -545,21 +599,58 @@ window.MacrosApp = { start(ctx) {
       };
     }
   }
+  // Silog meals: change each part's grams, add extras (e.g. one more hotdog), and log by plates or by grams
   function openCombo(f) {
-    openSheet(`${sheetHead(esc(f.name) + ' ' + badge(f), 'Silog meal · 1 plate ≈ ' + fmt(f.comboGrams, 0) + ' g' + (f.sugg ? ' · includes estimated parts' : ''))}
-      <div class="item-amount"><input class="input qty" id="cbQty" type="number" inputmode="decimal" min="0" step="any" value="1" aria-label="Plates"><span class="muted">plate(s)</span></div>
+    const parts = f.parts.map(pt => ({ food: pt.food, base: pt.grams, grams: pt.grams }));
+    const plateG = () => parts.reduce((a, pt) => a + pt.grams, 0);
+    let mode = 'plate';
+    const pieceUnit = food => ['pc', 'piece', 'slice', 'stick'].find(k => food.units[k]);
+    const pcs = pt => { const u = pieceUnit(pt.food); return u ? ` · ${fmt(pt.grams / pt.food.units[u], 1)} ${E.unitLabel(u, pt.grams / pt.food.units[u])}` : ''; };
+    const extra = pt => { const u = pieceUnit(pt.food); return u ? { g: pt.food.units[u], label: `+1 ${E.unitLabel(u, 1)}` } : { g: pt.base, label: '+ extra' }; };
+    openSheet(`${sheetHead(esc(f.name) + ' ' + badge(f), 'Silog meal · change any part, or add an extra' + (f.sugg ? ' · includes estimated parts' : ''))}
+      <div class="item-amount"><input class="input qty" id="cbQty" type="number" inputmode="decimal" min="0" step="any" value="1" aria-label="Amount">
+        <select class="select" id="cbMode" aria-label="Unit"><option value="plate">plate(s)</option><option value="g">grams (whole plate)</option></select>
+        <span class="grams" id="cbInfo"></span></div>
       <div style="margin-top:14px"><div class="kcal-big" id="cbKcal"></div><div id="cbTiles"></div></div>
-      <ul class="parts">${f.parts.map(p => `<li><span>${esc(p.food.name)} ${badge(p.food)}</span><span class="muted">${fmt(p.grams, 0)} g · ${k0(E.macros(p.food, p.grams).kcal)} kcal</span></li>`).join('')}</ul>
+      <div class="eyebrow" style="margin-top:16px">What's on 1 plate</div>
+      <ul class="parts combo-parts" id="cbParts"></ul>
       <div class="add-row">${mealSelect('cbMeal', defaultMeal())}<button class="btn grow" type="button" id="cbAdd">Add to Day ${curDay().n}</button></div>
-      <div class="row-actions"><button class="btn ghost small" type="button" id="cbUse">Open in Identify to adjust parts</button></div>`);
-    const calc = () => { const n = parseFloat($('#cbQty').value) || 0; const m = E.macros(f, f.comboGrams * n); $('#cbKcal').innerHTML = `${k0(m.kcal)}<span>kcal</span>`; $('#cbTiles').innerHTML = macroTiles(m, false); return n; };
-    calc(); $('#cbQty').addEventListener('input', calc);
+      <div class="row-actions"><button class="btn ghost small" type="button" id="cbUse">Open in Identify</button></div>`);
+    const plates = () => { const v = parseFloat($('#cbQty').value) || 0; return mode === 'g' ? (plateG() ? v / plateG() : 0) : v; };
+    const renderParts = () => {
+      $('#cbParts').innerHTML = parts.map((pt, i) => `<li data-pi="${i}"><div class="cp-name">${esc(pt.food.name)} ${badge(pt.food)}<small class="muted">${k0(E.macros(pt.food, pt.grams).kcal)} kcal${pcs(pt)}</small></div>
+        <div class="cp-amt"><input class="input" type="number" inputmode="decimal" min="0" step="any" value="${Math.round(pt.grams)}" aria-label="Grams of ${esc(pt.food.name)}" data-pg><span class="muted">g</span>
+          <button class="btn ghost small" type="button" data-extra title="Add ${fmt(extra(pt).g, 0)} g more ${esc(pt.food.name)}">${esc(extra(pt).label)}</button></div></li>`).join('');
+    };
+    const calc = () => {
+      const n = plates(); const m = E.sumMacros(parts.map(pt => E.macros(pt.food, pt.grams * n)));
+      $('#cbKcal').innerHTML = `${k0(m.kcal)}<span>kcal</span>`; $('#cbTiles').innerHTML = macroTiles(m, false);
+      $('#cbInfo').textContent = mode === 'g' ? `≈ ${fmt(n, 2)} plate${n === 1 ? '' : 's'}` : `= ${fmt(plateG() * n, 0)} g`;
+      parts.forEach((pt, i) => { const li = $(`#cbParts [data-pi="${i}"] small`); if (li) li.textContent = `${k0(E.macros(pt.food, pt.grams).kcal)} kcal${pcs(pt)}`; });
+      return n;
+    };
+    renderParts(); calc();
+    $('#cbQty').addEventListener('input', calc);
+    $('#cbMode').addEventListener('change', e => { const n = plates(); mode = e.target.value; $('#cbQty').value = mode === 'g' ? Math.round(plateG() * n) : r1(n) || 1; calc(); });
+    $('#cbParts').addEventListener('input', e => {
+      if (!e.target.matches('[data-pg]')) return;
+      const n = plates(); parts[+e.target.closest('[data-pi]').dataset.pi].grams = Math.max(0, parseFloat(e.target.value) || 0);
+      if (mode === 'g') $('#cbQty').value = Math.round(plateG() * n);
+      calc();
+    });
+    $('#cbParts').addEventListener('click', e => {
+      if (!e.target.closest('[data-extra]')) return;
+      const n = plates(); const pt = parts[+e.target.closest('[data-pi]').dataset.pi];
+      pt.grams += extra(pt).g; if (mode === 'g') $('#cbQty').value = Math.round(plateG() * n);
+      renderParts(); calc();
+    });
+    const asItems = n => parts.filter(pt => pt.grams > 0).map(pt => ({ kind: 'food', food: pt.food, qty: Math.round(pt.grams * n), unit: 'g', grams: pt.grams * n, note: '', parent: f.name, query: f.name, alts: [] }));
     $('#cbAdd').onclick = () => {
-      const n = calc(); if (!n) return; const meal = $('#cbMeal').value;
-      const { added, kc, day } = logToDay(E.expandCombo(f, n), meal); closeSheet();
+      const n = calc(); if (!n || !plateG()) return toast('Enter an amount first.'); const meal = $('#cbMeal').value;
+      const { added, kc, day } = logToDay(asItems(n), meal); closeSheet();
       toast(`Added to Day ${day.n} · ${meal} · ${k0(kc)} kcal`, { label: 'Undo', run: () => undoLog(day, added) });
     };
-    $('#cbUse').onclick = () => { const n = calc(); closeSheet(); location.hash = '#identify'; items = E.expandCombo(f, n); q.value = `${n} ${f.key}`; autosize(); renderResults(); };
+    $('#cbUse').onclick = () => { const n = calc(); closeSheet(); location.hash = '#identify'; items = asItems(n); q.value = `${fmt(n, 2)} ${f.key}`; autosize(); renderResults(); };
   }
   function openEat(key) {
     const x = myEats().find(e => e.key === key); if (!x) return;
@@ -673,6 +764,10 @@ window.MacrosApp = { start(ctx) {
       ${acct ? `<div class="card settings-card"><h2>Account</h2>
         <p class="muted small" style="margin:0">Signed in as <b>${esc(acct.email)}</b>${acct.provider === 'google.com' ? ' with Google' : ''}. Your days, recipes and foods are saved to your account and sync across your devices.</p>
         <div class="row-actions"><button class="btn ghost small" type="button" id="signOutBtn">Sign out</button></div></div>` : ''}
+      <div class="card settings-card"><h2>Your goal</h2>
+        <p class="muted small" style="margin:0">${settings.profile ? esc(window.MacrosSetup.summary(settings.profile)) : 'Not set up yet.'}</p>
+        <div class="row-actions"><button class="btn small outline" type="button" id="redoSetupBtn">Redo setup</button></div>
+        <p class="muted small" style="margin:10px 0 0">Redo it when your weight, activity or goal changes. It replaces the targets below.</p></div>
       <div class="card settings-card"><h2>Daily targets</h2>
         <div class="form-grid">
           ${[['kcal', 'Calories'], ['p', 'Protein (g)'], ['c', 'Carbs (g)'], ['f', 'Fat (g)'], ['fib', 'Fiber (g)']].map(([k, l]) => `<label class="field">${l}<input class="input" type="number" inputmode="numeric" min="0" data-target="${k}" value="${T[k]}"></label>`).join('')}
@@ -718,6 +813,7 @@ window.MacrosApp = { start(ctx) {
       settings.targets[inp.dataset.target] = Math.max(0, parseFloat(inp.value) || 0); saveSettings();
       $('#tgtCheck').textContent = k0(settings.targets.p * 4 + settings.targets.c * 4 + settings.targets.f * 9);
     }));
+    $('#redoSetupBtn').onclick = () => openSetup(true);
     $('#setVoice').onchange = e => { settings.voiceLang = e.target.value; saveSettings(); };
     $('#setTheme').onchange = e => { settings.theme = e.target.value; saveSettings(); applyTheme(); };
     $('#exportBtn').onclick = exportData;
@@ -728,7 +824,7 @@ window.MacrosApp = { start(ctx) {
       location.reload();
     };
   }
-  function applyTheme() { if (settings.theme === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.dataset.theme = settings.theme; }
+  function applyTheme() { document.documentElement.dataset.theme = settings.theme || 'light'; }
   function exportData() {
     const data = { app: 'macro-id', version: 2, exportedAt: new Date().toISOString(), settings, custom, days, recent };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -787,10 +883,28 @@ window.MacrosApp = { start(ctx) {
     else if (!$('#view-identify').hidden && !q.value.trim()) renderResults();
   }
 
+  // ---------- Setup (body stats + goal → targets) ----------
+  function openSetup(canCancel) {
+    const appEl = $('#app'), box = $('#setup');
+    const close = () => { box.hidden = true; box.innerHTML = ''; appEl.hidden = false; window.scrollTo(0, 0); };
+    appEl.hidden = true; box.hidden = false;
+    window.MacrosSetup.open(box, {
+      profile: settings.profile,
+      onCancel: canCancel ? close : null,
+      onDone: (profile, targets) => {
+        settings.profile = profile; settings.targets = { ...targets }; settings.setupDone = true; saveSettings();
+        close(); updatePill();
+        if (!$('#view-settings').hidden) renderSettings(); else if (!$('#view-day').hidden) renderDay();
+        toast(`Your target: ${k0(targets.kcal)} kcal · ${targets.p} g protein a day`);
+      },
+    });
+  }
+
   // ---------- Boot ----------
   updatePill();
   autosize();
   identify();
   route();
+  if (!settings.setupDone) openSetup(false);
   return { reload, toast };
 } };

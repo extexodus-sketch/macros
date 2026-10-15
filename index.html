@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>maCros</title>
   <meta name="description" content="Type or say what you're eating and get exact calories, protein, carbs, fat and fiber — with Filipino foods built in.">
-  <meta name="theme-color" content="#0F766E">
+  <meta name="theme-color" content="#F6FAF8">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-192.png">
@@ -15,13 +15,14 @@
 </head>
 <body>
   <div class="gate" id="gate" hidden></div>
+  <div class="setup" id="setup" hidden></div>
   <div class="app" id="app" hidden>
     <header class="topbar">
       <a class="brand" href="#identify" aria-label="maCros home">
         <img src="icon.svg" alt="" width="34" height="34">
         <span><strong>maCros</strong></span>
       </a>
-      <a class="today-pill" href="#day" id="todayPill">Day 1 · 0 kcal</a>
+      <button class="today-pill" type="button" id="todayPill" title="Tap to switch between eaten and left">Day 1 · 0 kcal</button>
     </header>
 
     <main>
@@ -67,6 +68,7 @@
         <div class="cats" id="cats" role="tablist" aria-label="Categories"></div>
         <p class="muted small" id="foodCount"></p>
         <div id="foodList" class="food-list"></div>
+        <div id="foodsFoot"></div>
       </section>
 
       <!-- SETTINGS -->
@@ -92,6 +94,7 @@
   <script src="suggestions.js"></script>
   <script src="engine.js"></script>
   <script src="firebase-config.js"></script>
+  <script src="setup.js"></script>
   <script src="app.js"></script>
   <script type="module" src="boot.js"></script>
 </body>
