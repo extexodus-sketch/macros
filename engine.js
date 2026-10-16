@@ -127,7 +127,7 @@
     for (const cf of customRows) {
       const src = cf.src === 'R' ? 'R' : 'C';
       const food = { ...cf, cat: src === 'R' ? 'My Recipes' : 'My Foods', src, custom: true, sugg: false, raw: /\b(raw|uncooked|dry)\b/i.test(cf.name) };
-      food.key = food.name;
+      food.key = (cf.aliases && cf.aliases[0]) || food.name;   // names like "Taho (428g cup)" would re-parse as amounts
       indexAliases(food, cf.aliases || []);
       foods.push(food); byId[food.id] = food; byName[food.name] = food;
     }

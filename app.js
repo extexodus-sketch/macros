@@ -944,6 +944,8 @@ window.MacrosApp = { start(ctx) {
         <p class="muted small" style="margin:0">${acct ? 'Everything is already saved to your account. You can still download a copy for yourself, or restore one (this replaces your current data).' : 'Your days, recipes and own foods live in this browser only, and your phone and PC each keep their own. Download a backup file and open it on the other device with <b>Restore</b>.'}</p>
         <div class="row-actions"><button class="btn small" type="button" id="exportBtn">Download backup</button>
           <label class="btn small outline" style="cursor:pointer">Restore backup<input type="file" id="importFile" accept="application/json,.json" hidden></label></div>
+        <p class="muted small" style="margin:12px 0 0"><b>Import foods</b> adds the foods from a file (or another backup) to My Foods. Nothing else changes, and foods you already have are skipped.</p>
+        <div class="row-actions"><label class="btn small outline" style="cursor:pointer">Import foods<input type="file" id="importFoodsFile" accept="application/json,.json" hidden></label></div>
       </div>
       <div class="card settings-card"><h2>About the numbers</h2>
         <ul class="legend-list">
@@ -973,6 +975,7 @@ window.MacrosApp = { start(ctx) {
     $('#setTheme').onchange = e => { settings.theme = e.target.value; saveSettings(); applyTheme(); };
     $('#exportBtn').onclick = exportData;
     $('#importFile').onchange = e => { const f = e.target.files[0]; if (f) importData(f); e.target.value = ''; };
+    $('#importFoodsFile').onchange = e => { const f = e.target.files[0]; if (f) importFoods(f); e.target.value = ''; };
     if (!acct) $('#resetBtn').onclick = () => {
       if (!confirm('Erase all your days, recipes, own foods and settings on this device? Download a backup first if you might want them.')) return;
       ['settings', 'custom', 'log', 'days', 'recent'].forEach(k => { try { localStorage.removeItem(PREFIX + k); } catch { /* ignore */ } });
@@ -1002,6 +1005,35 @@ window.MacrosApp = { start(ctx) {
       viewIdx = days.length - 1;
       saveSettings(); saveCustom(); saveDays(); store.set('recent', recent); applyTheme(); updatePill(); renderSettings();
       toast('Backup restored');
+    };
+    r.readAsText(file);
+  }
+  // Adds foods to My Foods without touching anything else. Takes { app, foods: [...] } or a full backup's custom list.
+  function importFoods(file) {
+    const r = new FileReader();
+    r.onload = () => {
+      let d; try { d = JSON.parse(r.result); } catch { return toast('That file isn’t a valid foods file.'); }
+      const rows = d && d.app === 'macro-id' ? (Array.isArray(d.foods) ? d.foods : Array.isArray(d.custom) ? d.custom : null) : null;
+      if (!rows) return toast('That file isn’t a maCros foods file.');
+      const num = v => (typeof v === 'number' && isFinite(v) && v >= 0 ? v : 0);
+      const have = new Set(custom.map(c => c.name.trim().toLowerCase()));
+      const add = [];
+      rows.forEach(x => {
+        const name = x && typeof x.name === 'string' ? x.name.trim() : '';
+        if (!name || have.has(name.toLowerCase())) return;
+        const units = {}; Object.entries(x.units || {}).forEach(([u, g]) => { if (typeof g === 'number' && g > 0) units[u] = g; });
+        const row = { id: (x.src === 'R' ? 'rc-' : 'my-') + uid(), name, aliases: Array.isArray(x.aliases) ? x.aliases.filter(a => typeof a === 'string') : [],
+          kcal: num(x.kcal), p: num(x.p), c: num(x.c), f: num(x.f), fib: num(x.fib), units, d: units[x.d] ? x.d : 'g' };
+        if (x.src === 'R') row.src = 'R';
+        if (x.recipe) row.recipe = x.recipe;
+        if (x.barcode) row.barcode = String(x.barcode);
+        have.add(name.toLowerCase()); add.push(row);
+      });
+      const skipped = rows.length - add.length;
+      if (!add.length) return toast(skipped ? 'You already have all of these foods.' : 'No foods found in that file.');
+      if (!confirm(`Add ${add.length} food${add.length === 1 ? '' : 's'} to My Foods?${skipped ? ` (${skipped} you already have will be skipped.)` : ''}`)) return;
+      custom = custom.concat(add); saveCustom(); renderSettings();
+      toast(`Added ${add.length} to My Foods`);
     };
     r.readAsText(file);
   }
