@@ -1011,31 +1011,39 @@ window.MacrosApp = { start(ctx) {
   // Adds foods to My Foods without touching anything else. Takes { app, foods: [...] } or a full backup's custom list.
   function importFoods(file) {
     const r = new FileReader();
-    r.onload = () => {
-      let d; try { d = JSON.parse(r.result); } catch { return toast('That file isn’t a valid foods file.'); }
-      const rows = d && d.app === 'macro-id' ? (Array.isArray(d.foods) ? d.foods : Array.isArray(d.custom) ? d.custom : null) : null;
-      if (!rows) return toast('That file isn’t a maCros foods file.');
-      const num = v => (typeof v === 'number' && isFinite(v) && v >= 0 ? v : 0);
-      const have = new Set(custom.map(c => c.name.trim().toLowerCase()));
-      const add = [];
-      rows.forEach(x => {
-        const name = x && typeof x.name === 'string' ? x.name.trim() : '';
-        if (!name || have.has(name.toLowerCase())) return;
-        const units = {}; Object.entries(x.units || {}).forEach(([u, g]) => { if (typeof g === 'number' && g > 0) units[u] = g; });
-        const row = { id: (x.src === 'R' ? 'rc-' : 'my-') + uid(), name, aliases: Array.isArray(x.aliases) ? x.aliases.filter(a => typeof a === 'string') : [],
-          kcal: num(x.kcal), p: num(x.p), c: num(x.c), f: num(x.f), fib: num(x.fib), units, d: units[x.d] ? x.d : 'g' };
-        if (x.src === 'R') row.src = 'R';
-        if (x.recipe) row.recipe = x.recipe;
-        if (x.barcode) row.barcode = String(x.barcode);
-        have.add(name.toLowerCase()); add.push(row);
-      });
-      const skipped = rows.length - add.length;
-      if (!add.length) return toast(skipped ? 'You already have all of these foods.' : 'No foods found in that file.');
-      if (!confirm(`Add ${add.length} food${add.length === 1 ? '' : 's'} to My Foods?${skipped ? ` (${skipped} you already have will be skipped.)` : ''}`)) return;
-      custom = custom.concat(add); saveCustom(); renderSettings();
+    r.onerror = () => toast('Couldn’t read that file. Try picking it again.');
+    r.onload = () => { try { importFoodsFrom(r.result); } catch (err) { console.error(err); toast('Couldn’t import those foods: ' + (err && err.message || err)); } };
+    r.readAsText(file);
+  }
+  function importFoodsFrom(text) {
+    let d; try { d = JSON.parse(text); } catch { return toast('That file isn’t a valid foods file.'); }
+    const rows = d && d.app === 'macro-id' ? (Array.isArray(d.foods) ? d.foods : Array.isArray(d.custom) ? d.custom : null) : null;
+    if (!rows) return toast('That file isn’t a maCros foods file.');
+    const num = v => (typeof v === 'number' && isFinite(v) && v >= 0 ? v : 0);
+    if (!Array.isArray(custom)) custom = [];
+    const have = new Set(custom.map(c => String(c && c.name || '').trim().toLowerCase()));
+    const add = [];
+    rows.forEach(x => {
+      const name = x && typeof x.name === 'string' ? x.name.trim() : '';
+      if (!name || have.has(name.toLowerCase())) return;
+      const units = {}; Object.entries(x.units || {}).forEach(([u, g]) => { if (typeof g === 'number' && g > 0) units[u] = g; });
+      const row = { id: (x.src === 'R' ? 'rc-' : 'my-') + uid(), name, aliases: Array.isArray(x.aliases) ? x.aliases.filter(a => typeof a === 'string') : [],
+        kcal: num(x.kcal), p: num(x.p), c: num(x.c), f: num(x.f), fib: num(x.fib), units, d: units[x.d] ? x.d : 'g' };
+      if (x.src === 'R') row.src = 'R';
+      if (x.recipe) row.recipe = x.recipe;
+      if (x.barcode) row.barcode = String(x.barcode);
+      have.add(name.toLowerCase()); add.push(row);
+    });
+    const skipped = rows.length - add.length;
+    if (!add.length) return toast(skipped ? 'You already have all of these foods.' : 'No foods found in that file.');
+    // An in-app sheet, not confirm(): a browser that blocks this site's dialogs would silently answer "no"
+    openSheet(`${sheetHead(`Add ${add.length} food${add.length === 1 ? '' : 's'} to My Foods?`, skipped ? `${skipped} you already have will be skipped.` : 'Nothing else changes.')}
+      <ul class="parts">${add.map(x => `<li><span>${esc(x.name)}</span></li>`).join('')}</ul>
+      <div class="add-row"><button class="btn grow" type="button" id="ifAdd">Add ${add.length} food${add.length === 1 ? '' : 's'}</button></div>`);
+    $('#ifAdd').onclick = () => {
+      custom = custom.concat(add); saveCustom(); closeSheet(); renderSettings(); renderFoods();
       toast(`Added ${add.length} to My Foods`);
     };
-    r.readAsText(file);
   }
 
   function openDeleteAccount() {
