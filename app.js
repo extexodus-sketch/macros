@@ -191,7 +191,34 @@ window.MacrosApp = { start(ctx) {
       ? `Day ${d.n} · ${left >= 0 ? k0(left) + ' kcal left' : k0(-left) + ' kcal over'}`
       : `Day ${d.n} · ${k0(tot.kcal)} kcal`;
     pill.classList.toggle('left', settings.pill === 'left');
+    updateBell();
   }
+
+  // ---------- What's new (bell, top left) ----------
+  // Entries live in updates.js; settings.updatesSeen is the newest one you've opened, so it syncs with your account.
+  const UPDATES = (window.MACROS_UPDATES || []).slice().sort((a, b) => b.at.localeCompare(a.at));
+  const KIND = { feature: 'New feature', improvement: 'Improvement', fix: 'Fix' };
+  const atTime = at => new Date(at.replace(' ', 'T')).getTime();
+  // First time: only the last week counts as unread, so a new account isn't buried in old news
+  const unseen = () => UPDATES.filter(u => settings.updatesSeen ? u.at > settings.updatesSeen : atTime(u.at) > Date.now() - 7 * DAY_MS);
+  function updateBell() {
+    const n = unseen().length, b = $('#bellBadge');
+    b.hidden = !n; b.textContent = n > 9 ? '9+' : n;
+    $('#bellBtn').setAttribute('aria-label', n ? `What’s new, ${n} unread` : 'What’s new');
+  }
+  function openUpdates() {
+    const fresh = new Set(unseen());
+    const byDay = [];
+    UPDATES.forEach(u => { const d = u.at.slice(0, 10); const g = byDay[byDay.length - 1]; if (g && g.d === d) g.list.push(u); else byDay.push({ d, list: [u] }); });
+    const dayLabel = d => new Date(d + 'T12:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    openSheet(`${sheetHead('What’s new', fresh.size ? `${fresh.size} new since you last looked` : 'Every update to maCros, newest first')}
+      <div class="updates">${byDay.map(g => `<div class="up-day"><div class="eyebrow">${dayLabel(g.d)}</div>
+        ${g.list.map(u => `<div class="up-item ${u.kind}${fresh.has(u) ? ' unread' : ''}"><div class="up-top"><span class="up-kind">${KIND[u.kind] || 'Update'}</span>${fresh.has(u) ? '<span class="up-new">New</span>' : ''}</div>
+          <b>${esc(u.title)}</b><p>${esc(u.body)}</p></div>`).join('')}</div>`).join('')}</div>`);
+    if (UPDATES.length && settings.updatesSeen !== UPDATES[0].at) { settings.updatesSeen = UPDATES[0].at; saveSettings(); }
+    updateBell();
+  }
+  $('#bellBtn').addEventListener('click', openUpdates);
   // The Dashboard follows the same choice (Eaten / Left switch on its summary card)
   $('#todayPill').addEventListener('click', () => { settings.pill = settings.pill === 'left' ? 'eaten' : 'left'; saveSettings(); updatePill(); if (viewOpen('day')) renderDay(); });
 

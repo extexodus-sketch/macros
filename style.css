@@ -605,3 +605,20 @@ a { color: var(--accent); }
 /* After logging by voice: show where the food went */
 @keyframes flash-in { 0%, 60% { background: var(--accent-soft); } 100% { background: transparent; } }
 .entry.flash, .meal-head.flash { animation: flash-in 2.6s ease-out; border-radius: 10px; }
+
+/* What's new: bell at the top left */
+.bell { position: relative; justify-self: start; display: inline-grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: var(--text); cursor: pointer; }
+.bell:hover { background: var(--surface-2); color: var(--text); }
+.bell-badge { position: absolute; top: 2px; right: -2px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--danger); color: #fff; font-size: .62rem; font-weight: 700; line-height: 16px; text-align: center; box-shadow: 0 0 0 2px var(--bg, var(--surface)); }
+.updates { display: grid; gap: 18px; }
+.up-day { display: grid; gap: 8px; }
+.up-item { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--surface); }
+.up-item.feature { border-left-color: var(--accent-bright); }
+.up-item.fix { border-left-color: var(--muted); }
+.up-item.unread { background: var(--accent-soft); }
+.up-item b { display: block; margin-top: 2px; }
+.up-item p { margin: 4px 0 0; font-size: .88rem; color: var(--muted); }
+.up-top { display: flex; gap: 6px; align-items: center; }
+.up-kind { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.up-item.feature .up-kind { color: var(--accent); }
+.up-new { font-size: .68rem; font-weight: 700; color: #fff; background: var(--danger); border-radius: 6px; padding: 1px 6px; }
