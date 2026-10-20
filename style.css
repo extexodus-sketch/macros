@@ -199,7 +199,9 @@ a { color: var(--accent); }
 .day-title h1 { margin: 0; }
 .day-title small { color: var(--muted); }
 .ring-row { display: flex; align-items: center; gap: 18px; }
-.ring { flex: none; position: relative; width: 120px; height: 120px; }
+.ring { flex: none; position: relative; width: 120px; height: 120px; cursor: pointer; }
+.sum-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.bar-row .bar-lab b.over { color: var(--danger); }
 .ring svg { transform: rotate(-90deg); }
 .ring .ring-txt { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; line-height: 1.1; }
 .ring .ring-txt b { font-size: 1.5rem; font-variant-numeric: tabular-nums; display: block; }
@@ -589,3 +591,17 @@ a { color: var(--accent); }
 .scan-box video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .scan-frame { position: absolute; left: 12%; right: 12%; top: 32%; bottom: 32%; border: 3px solid rgba(255, 255, 255, .9); border-radius: 12px; box-shadow: 0 0 0 9999px rgba(0, 0, 0, .35); }
 #scanType { margin-top: 12px; }
+
+/* Recent foods: collapsed until tapped */
+.recent-box { margin-top: 14px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--surface); }
+.recent-box .cat-head { border-top: 0; }
+.recent-body { padding: 10px 14px 14px; border-top: 1px solid var(--line); }
+
+/* A day counted as on target (holiday, family gathering) */
+.on-target { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: var(--accent-soft); }
+.on-target b { display: block; color: var(--accent); }
+.on-target span { font-size: .85rem; color: var(--muted); }
+
+/* After logging by voice: show where the food went */
+@keyframes flash-in { 0%, 60% { background: var(--accent-soft); } 100% { background: transparent; } }
+.entry.flash, .meal-head.flash { animation: flash-in 2.6s ease-out; border-radius: 10px; }

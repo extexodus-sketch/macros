@@ -64,6 +64,9 @@ window.MacrosApp = { start(ctx) {
     return d;
   }
   const curDay = () => days[days.length - 1];
+  // A day marked "on target" (holiday, family gathering) counts as exactly your targets, whatever was logged
+  const dayTotals = d => d.onTarget ? (({ kcal, p, c, f, fib }) => ({ kcal, p, c, f, fib: fib || 0 }))(settings.targets) : E.sumMacros(d.entries);
+  const dayLogged = d => d.entries.length > 0 || !!d.onTarget;
 
   const MEALS = ['Breakfast', 'Lunch', 'Dinner', 'Snacks'];
   const MACROS = [
@@ -114,9 +117,10 @@ window.MacrosApp = { start(ctx) {
     const verified = E.all().filter(f => !f.sugg).length;
     const body = {
       day: `<ul class="legend-list"><li>Days only change when you tap <b>Start Day ${curDay().n + 1}</b>, never at midnight.</li>
-          <li>Tap the calories at the top right to switch between what you’ve eaten and what’s left.</li>
+          <li>Tap <b>Eaten / Left</b> (or the ring) to see what you’ve had or what’s left for calories, protein, carbs, fat and fiber. The calories at the top right on other pages follow the same choice.</li>
           <li>You can go back to past days with the arrows and still edit them.</li>
           <li>Tap <b>+</b> next to a meal to add food straight to it.</li>
+          <li>Holiday or family gathering? Tap <b>&#8943;</b> → <b>Count this day as on target</b>. The day counts as exactly your targets.</li>
           <li>Your targets come from your setup and current phase. Change them in Menu → Goals.</li>
           <li>Tap the note icon next to a meal to write down how it went.</li>
           <li>Swipe left, or tap <b>This week</b>, to see Monday to Sunday.</li></ul>`,
@@ -175,25 +179,28 @@ window.MacrosApp = { start(ctx) {
     if (tab === 'progress') renderProgress();
     if (tab === 'settings') renderSettings();
     window.scrollTo(0, 0);
+    if (tab === 'day' && flashNext) { const f = flashNext; flashNext = null; requestAnimationFrame(() => flashLogged(f)); }
   }
   const viewOpen = t => !$('#view-' + t).hidden;
   window.addEventListener('hashchange', route);
   // Top-right pill: tap to switch between calories eaten and calories left
   function updatePill() {
-    const d = curDay(); const tot = E.sumMacros(d.entries); const left = settings.targets.kcal - tot.kcal;
+    const d = curDay(); const tot = dayTotals(d); const left = settings.targets.kcal - tot.kcal;
     const pill = $('#todayPill');
     pill.textContent = settings.pill === 'left'
       ? `Day ${d.n} · ${left >= 0 ? k0(left) + ' kcal left' : k0(-left) + ' kcal over'}`
       : `Day ${d.n} · ${k0(tot.kcal)} kcal`;
     pill.classList.toggle('left', settings.pill === 'left');
   }
-  $('#todayPill').addEventListener('click', () => { settings.pill = settings.pill === 'left' ? 'eaten' : 'left'; saveSettings(); updatePill(); });
+  // The Dashboard follows the same choice (Eaten / Left switch on its summary card)
+  $('#todayPill').addEventListener('click', () => { settings.pill = settings.pill === 'left' ? 'eaten' : 'left'; saveSettings(); updatePill(); if (viewOpen('day')) renderDay(); });
 
   // ==========================================================
   // IDENTIFY
   // ==========================================================
   const q = $('#q');
   let items = [], parsedMeal = null, typingT;
+  let recentOpen = false, listening = false, viaVoice = false, flashNext = null;   // viaVoice: the box was filled by speaking
 
   q.addEventListener('input', () => { autosize(); clearTimeout(typingT); typingT = setTimeout(identify, 160); });
   q.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addCurrent(); } });
@@ -209,9 +216,9 @@ window.MacrosApp = { start(ctx) {
   const defaultAmountText = f => (f.d === 'g' ? '100g' : `1 ${f.d}`);
 
   function renderResults() {
+    // Browse foods stays below the matches, so you can add more foods from it
     const box = $('#results');
-    $('#browse').hidden = !!q.value.trim();
-    if (!q.value.trim()) { box.innerHTML = emptyState(); return; }
+    if (!q.value.trim()) { viaVoice = false; box.innerHTML = emptyState(); return; }
     if (!items.length) { box.innerHTML = '<p class="muted" style="margin:18px 4px">Keep typing — add the food name.</p>'; return; }
     const foods = items.filter(i => i.kind === 'food');
     let html = '';
@@ -328,6 +335,7 @@ window.MacrosApp = { start(ctx) {
     const fr = e.target.closest('#moreFoods [data-id]'); if (fr) return openFood(fr.dataset.id);
     const b = e.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act;
+    if (act === 'recenttoggle') { recentOpen = !recentOpen; b.setAttribute('aria-expanded', recentOpen); b.nextElementSibling.hidden = !recentOpen; return; }
     if (act === 'recent') { const f = E.byId(b.dataset.id); if (f) appendQuery(`${b.dataset.g ? b.dataset.g + 'g' : defaultAmountText(f)} ${f.key}`); return; }
     if (act === 'add') return addCurrent();
     if (act === 'recipe') return openRecipeForm();
@@ -365,9 +373,11 @@ window.MacrosApp = { start(ctx) {
   function emptyState() {
     const seen = new Set();
     const rec = myEats().filter(x => E.byId(x.last.fid) && !seen.has(x.last.fid) && seen.add(x.last.fid)).slice(0, 10);
-    return `<div class="empty">
-      ${rec.length ? `<h3 class="section-title">Recent — tap to add the same amount</h3><div class="chips">${rec.map(x => `<button class="chip" type="button" data-act="recent" data-id="${esc(x.last.fid)}" data-g="${Math.round(x.last.grams)}">${esc(x.last.name)} <span class="muted">· ${fmt(x.last.grams, 0)} g</span></button>`).join('')}</div>`
-        : '<p class="muted" style="margin:18px 4px">Foods you add will show up here so you can tap them next time.</p>'}
+    // Collapsed until tapped, so it doesn't crowd the Add page
+    if (!rec.length) return '';
+    return `<div class="empty recent-box"><button class="cat-head" type="button" data-act="recenttoggle" aria-expanded="${recentOpen}">
+        <span>Recent</span><span class="cat-count">${rec.length}<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M6.3 9.3a1 1 0 0 1 1.4 0L12 13.6l4.3-4.3a1 1 0 1 1 1.4 1.4l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 0 1 0-1.4Z"/></svg></span></button>
+      <div class="recent-body"${recentOpen ? '' : ' hidden'}><p class="muted small" style="margin:0 0 8px">Tap to add the same amount.</p><div class="chips">${rec.map(x => `<button class="chip" type="button" data-act="recent" data-id="${esc(x.last.fid)}" data-g="${Math.round(x.last.grams)}">${esc(x.last.name)} <span class="muted">· ${fmt(x.last.grams, 0)} g</span></button>`).join('')}</div></div>
     </div>`;
   }
 
@@ -376,14 +386,23 @@ window.MacrosApp = { start(ctx) {
     if (!foods.length) return toast('Nothing to add yet.');
     const meal = $('#mealSel') ? $('#mealSel').value : defaultMeal();
     const { added, kc, day } = logToDay(foods, meal); pendingMeal = null;
-    const backup = q.value;
+    const backup = q.value, spoken = viaVoice;
     q.value = ''; autosize(); identify();
     toast(`Added ${foods.length} to Day ${day.n} · ${meal} · ${k0(kc)} kcal`, { label: 'Undo', run: () => { undoLog(day, added); setQuery(backup); } });
+    // Spoken: go to the Dashboard and show where it went
+    if (spoken) { flashNext = { ids: added, meal }; dashPage = 'day'; location.hash = '#day'; }
+  }
+  function flashLogged({ ids, meal }) {
+    const head = $$('#dayBody .meal-head').find(h => h.querySelector('h2').textContent === meal);
+    const els = ids.map(id => $(`#dayBody .entry[data-id="${CSS.escape(id)}"]`)).filter(Boolean);
+    const target = els[0] || head; if (!target) return;
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    [head, ...els].filter(Boolean).forEach(el => { el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 2600); });
   }
 
   // ---------- Voice ----------
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let rec = null, listening = false;
+  let rec = null;
   const mic = $('#mic'), vs = $('#voiceStatus');
   if (!SR) mic.title = 'Voice input needs Chrome, Edge or Safari';
   mic.addEventListener('click', () => {
@@ -395,7 +414,7 @@ window.MacrosApp = { start(ctx) {
     rec.onstart = () => { listening = true; mic.classList.add('listening'); vs.classList.add('on'); vs.textContent = 'Listening… say what you ate, then pause.'; };
     rec.onresult = e => {
       let txt = ''; for (let i = 0; i < e.results.length; i++) txt += e.results[i][0].transcript;
-      q.value = base + txt; autosize(); identify();
+      q.value = base + txt; autosize(); identify(); if (txt.trim()) viaVoice = true;
     };
     rec.onerror = e => {
       const msg = { 'not-allowed': 'Microphone blocked. Allow mic access for this page in your browser settings.',
@@ -415,31 +434,39 @@ window.MacrosApp = { start(ctx) {
   $('#dayPrev').addEventListener('click', () => { if (viewIdx > 0) { viewIdx--; renderDay(); } });
   $('#dayNext').addEventListener('click', () => { if (viewIdx < days.length - 1) { viewIdx++; renderDay(); } });
 
-  function ring(value, target) {
+  function ring(value, target, showLeft) {
     const r = 52, c = 2 * Math.PI * r, pct = target ? Math.min(value / target, 1) : 0;
     const over = target && value > target;
-    return `<div class="ring"><svg viewBox="0 0 120 120" width="100%" height="100%">
+    const txt = showLeft ? `<b>${k0(Math.abs(target - value))}</b><small>kcal ${over ? 'over' : 'left'}</small>` : `<b>${k0(value)}</b><small>of ${k0(target)} kcal</small>`;
+    return `<div class="ring" data-act="mode" data-mode="${showLeft ? 'eaten' : 'left'}" title="Tap to show ${showLeft ? 'what you’ve eaten' : 'what’s left'}"><svg viewBox="0 0 120 120" width="100%" height="100%">
       <circle cx="60" cy="60" r="${r}" fill="none" stroke="var(--surface-2)" stroke-width="12"/>
       <circle cx="60" cy="60" r="${r}" fill="none" stroke="${over ? 'var(--danger)' : 'var(--accent-bright)'}" stroke-width="12" stroke-linecap="round"
         stroke-dasharray="${c * pct} ${c}"/></svg>
-      <div class="ring-txt"><div><b>${k0(value)}</b><small>of ${k0(target)} kcal</small></div></div></div>`;
+      <div class="ring-txt"><div>${txt}</div></div></div>`;
   }
+  // Grams left (or over) for one macro, matching the pill's Eaten / Left mode
+  const gLeft = (eaten, target) => eaten <= target ? `<b>${fmt(target - eaten, 0)}</b> g left` : `<b class="over">${fmt(eaten - target, 0)}</b> g over`;
   function renderDay() {
     const day = days[viewIdx]; const isCur = viewIdx === days.length - 1;
     $('#dayTitle').textContent = `Day ${day.n}`;
     $('#daySub').textContent = isCur ? `Current day · ${shortDate(day.start)}` : `${when(day.start)} – ${when(days[viewIdx + 1].start)}`;
     $('#dayPrev').disabled = viewIdx === 0; $('#dayNext').disabled = isCur;
     const entries = day.entries;
-    const tot = E.sumMacros(entries); const T = settings.targets;
-    const left = T.kcal - tot.kcal;
-    let html = `<div class="card"><div class="ring-row">${ring(tot.kcal, T.kcal)}<div class="bars">
+    const tot = dayTotals(day); const T = settings.targets;
+    const left = T.kcal - tot.kcal; const showLeft = settings.pill === 'left';
+    let html = `<div class="card"><div class="sum-head"><span class="muted small">${showLeft ? 'What’s left' : 'What you’ve eaten'}</span>
+      <div class="seg mini" role="group" aria-label="Show eaten or left">${[['eaten', 'Eaten'], ['left', 'Left']].map(([m, l]) =>
+        `<button type="button" data-act="mode" data-mode="${m}" class="${(showLeft ? 'left' : 'eaten') === m ? 'on' : ''}" aria-pressed="${(showLeft ? 'left' : 'eaten') === m}">${l}</button>`).join('')}</div></div>
+      <div class="ring-row">${ring(tot.kcal, T.kcal, showLeft)}<div class="bars">
       ${MACROS.map(x => {
         const pct = T[x.k] ? Math.min(tot[x.k] / T[x.k] * 100, 100) : 0;
-        return `<div class="bar-row"><div class="bar-lab"><span>${x.label}</span><span><b>${fmt(tot[x.k], 0)}</b> / ${fmt(T[x.k], 0)} g</span></div>
+        return `<div class="bar-row"><div class="bar-lab"><span>${x.label}</span><span>${showLeft ? gLeft(tot[x.k], T[x.k]) : `<b>${fmt(tot[x.k], 0)}</b> / ${fmt(T[x.k], 0)} g`}</span></div>
           <div class="bar"><span class="dot-${x.cls}" style="width:${pct}%"></span></div></div>`;
       }).join('')}
     </div></div>
-    <p class="muted small" style="margin:12px 0 0">${entries.length ? (left >= 0 ? `<b>${k0(left)} kcal</b> left to reach your target.` : `<b>${k0(-left)} kcal</b> over your target.`) + ` Protein to go: <b>${fmt(Math.max(T.p - tot.p, 0), 0)} g</b>.` : `Target: ${k0(T.kcal)} kcal · ${fmt(T.p, 0)} g protein${activePhase() ? ` (${esc(activePhase().name)})` : ''}.`}</p></div>`;
+    ${day.onTarget ? `<div class="on-target"><div><b>Counted as on target</b><span>A holiday or family day, so it counts as your targets.${entries.length ? ` You logged ${k0(E.sumMacros(entries).kcal)} kcal.` : ''}</span></div>
+      <button class="btn ghost small" type="button" data-act="ontarget">Use my real numbers</button></div>`
+    : `<p class="muted small" style="margin:12px 0 0">${entries.length ? (left >= 0 ? `<b>${k0(left)} kcal</b> left to reach your target.` : `<b>${k0(-left)} kcal</b> over your target.`) + ` Protein to go: <b>${fmt(Math.max(T.p - tot.p, 0), 0)} g</b>.` : `Target: ${k0(T.kcal)} kcal · ${fmt(T.p, 0)} g protein${activePhase() ? ` (${esc(activePhase().name)})` : ''}.`}</p>`}</div>`;
     if (isCur) html += '<div class="water" id="waterDash" style="margin-top:12px"></div>';
     // Manual days: if the day began on an earlier date, offer to start the next one (never automatic)
     const stale = isCur && entries.length && dayStart(day.start) < dayStart(Date.now()) && new Date().getHours() >= 4 && settings.nudgeSkip !== day.id;
@@ -468,7 +495,7 @@ window.MacrosApp = { start(ctx) {
     }
     html += `<div class="today-actions">
       ${isCur ? `<button class="btn outline grow" type="button" data-act="newday">Start Day ${day.n + 1}</button>` : `<button class="btn ghost small" type="button" data-act="gocur">Go to current day (Day ${curDay().n})</button>`}
-      ${entries.length ? '<button class="icon-btn more-btn" type="button" data-act="daymore" aria-label="More options">&#8943;</button>' : ''}</div>
+      <button class="icon-btn more-btn" type="button" data-act="daymore" aria-label="More options">&#8943;</button></div>
       ${reminderBtn('day')}`;
     $('#dayBody').innerHTML = html;
     if (isCur) renderWater($('#waterDash'));
@@ -489,21 +516,33 @@ window.MacrosApp = { start(ctx) {
       viewIdx = days.length - 1; updatePill(); renderDay();
       toast(`Day ${cur.n + 1} started`, { label: 'Undo', run: () => { if (curDay().entries.length) return; days.pop(); saveDays(); viewIdx = days.length - 1; updatePill(); renderDay(); } });
     }
+    if (b.dataset.act === 'mode') { settings.pill = b.dataset.mode; saveSettings(); updatePill(); renderDay(); }
     if (b.dataset.act === 'gocur') { viewIdx = days.length - 1; renderDay(); }
     if (b.dataset.act === 'note') openNote(day, b.dataset.meal);
     if (b.dataset.act === 'tour') openTour(0);
     if (b.dataset.act === 'tourhide') { settings.tour = Object.assign({}, settings.tour, { hide: true }); saveSettings(); renderDay(); toast('You can find the tour in Menu → Tutorial'); }
     if (b.dataset.act === 'addmeal') { pendingMeal = b.dataset.meal; location.hash = '#add'; setTimeout(() => q.focus(), 60); }
     if (b.dataset.act === 'nudgeskip') { settings.nudgeSkip = day.id; saveSettings(); renderDay(); }
+    if (b.dataset.act === 'ontarget') setOnTarget(day, !day.onTarget);
     if (b.dataset.act === 'daymore') {
-      openSheet(`${sheetHead('More options', `Day ${day.n}`)}<div class="action-list"><button type="button" class="action-row" id="copyDayBtn"><b>Copy day summary</b><span>Paste it into a chat or your notes</span></button></div>`);
-      $('#copyDayBtn').onclick = () => { closeSheet(); copyDay(day); };
+      openSheet(`${sheetHead('More options', `Day ${day.n}`)}<div class="action-list">
+        <button type="button" class="action-row" id="onTargetBtn">${day.onTarget ? '<b>Use my real numbers</b><span>Go back to the totals of what you logged</span>'
+          : '<b>Count this day as on target</b><span>Holiday or family gathering? The day counts as exactly your targets, so you aren’t punished for not counting.</span>'}</button>
+        ${day.entries.length ? '<button type="button" class="action-row" id="copyDayBtn"><b>Copy day summary</b><span>Paste it into a chat or your notes</span></button>' : ''}</div>`);
+      $('#onTargetBtn').onclick = () => { closeSheet(); setOnTarget(day, !day.onTarget); };
+      if (day.entries.length) $('#copyDayBtn').onclick = () => { closeSheet(); copyDay(day); };
     }
   });
+  function setOnTarget(day, on) {
+    if (on) day.onTarget = true; else delete day.onTarget;
+    saveDays(); updatePill(); renderDay();
+    toast(on ? `Day ${day.n} counts as on target` : `Day ${day.n} uses your real numbers`, { label: 'Undo', run: () => setOnTarget(day, !on) });
+  }
   function copyDay(day) {
     {
       const t = E.sumMacros(day.entries);
       const lines = [`Day ${day.n} (${when(day.start)}): ${k0(t.kcal)} kcal · P ${fmt(t.p, 0)}g · C ${fmt(t.c, 0)}g · F ${fmt(t.f, 0)}g · Fiber ${fmt(t.fib, 0)}g`];
+      if (day.onTarget) lines.push(`Counted as on target (${k0(settings.targets.kcal)} kcal).`);
       for (const meal of MEALS) {
         const l = day.entries.filter(x => x.meal === meal); const note = (day.notes || {})[meal]; if (!l.length && !note) continue;
         lines.push('', meal + ':'); l.forEach(x => lines.push(`- ${x.name}, ${x.amt}: ${k0(x.kcal)} kcal, P ${fmt(x.p)} C ${fmt(x.c)} F ${fmt(x.f)}`));
@@ -1358,9 +1397,9 @@ window.MacrosApp = { start(ctx) {
     const first = Math.min(...days.flatMap(d => d.entries.map(e => e.t)), Date.now());
     const from = Math.max(today - (n - 1) * DAY_MS, dayStart(first));   // don't count days before you started
     const span = Math.round((today - from) / DAY_MS) + 1;
-    const dates = new Set(); days.forEach(d => d.entries.forEach(e => { if (e.t >= from) dates.add(dayStart(e.t)); }));
+    const dates = new Set(); days.forEach(d => { d.entries.forEach(e => { if (e.t >= from) dates.add(dayStart(e.t)); }); if (d.onTarget && d.start >= from) dates.add(dayStart(d.start)); });
     // Averages use finished days only; the current day is still being eaten
-    const logged = days.filter(d => d !== curDay() && d.entries.length && d.start >= from).map(d => E.sumMacros(d.entries));
+    const logged = days.filter(d => d !== curDay() && dayLogged(d) && d.start >= from).map(dayTotals);
     const T = settings.targets; const avg = k => logged.length ? logged.reduce((a, t) => a + t[k], 0) / logged.length : 0;
     const tdee = settings.profile && settings.profile.kg ? maintenance().kcal : 0;
     return {
@@ -1495,7 +1534,7 @@ window.MacrosApp = { start(ctx) {
     const per = Array.from({ length: 7 }, (_, i) => {
       const dt = new Date(mon); dt.setDate(dt.getDate() + i); const d = dt.getTime();
       const list = days.filter(x => dayStart(x.start) === d);
-      return { d, t: E.sumMacros(list.flatMap(x => x.entries)), logged: list.some(x => x.entries.length), idx: list.length ? days.indexOf(list[list.length - 1]) : -1,
+      return { d, t: E.sumMacros(list.map(dayTotals)), logged: list.some(dayLogged), idx: list.length ? days.indexOf(list[list.length - 1]) : -1,
         water: list.reduce((a, x) => a + (x.water || 0), 0), future: d > Date.now() };
     });
     return { mon: mon.getTime(), per };
