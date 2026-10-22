@@ -61,10 +61,6 @@
           </div>
           <p class="voice-status" id="voiceStatus" aria-live="polite"></p>
         </div>
-        <div class="quick-row">
-          <button class="quick-btn" id="scanBtn" type="button"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M4 4h4v2H6v2H4V4Zm12 0h4v4h-2V6h-2V4ZM4 16h2v2h2v2H4v-4Zm14 2v-2h2v4h-4v-2h2ZM7 8h1.5v8H7V8Zm3 0h1v8h-1V8Zm2.5 0H14v8h-1.5V8Zm3 0h1v8h-1V8Z"/></svg>Scan barcode</button>
-          <button class="quick-btn" id="quickBtn" type="button"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg>Quick add</button>
-        </div>
         <div class="water" id="water"></div>
         <div id="results" aria-live="polite"></div>
         <div id="browse">
@@ -107,6 +103,16 @@
       <a href="#add" data-tab="add"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20Zm0 5a1 1 0 0 0-1 1v3H8a1 1 0 1 0 0 2h3v3a1 1 0 1 0 2 0v-3h3a1 1 0 1 0 0-2h-3V8a1 1 0 0 0-1-1Z"/></svg><span>Add</span></a>
       <a href="#menu" data-tab="menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 6a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 6a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm1 5a1 1 0 1 0 0 2h14a1 1 0 1 0 0-2H5Z"/></svg><span>Menu</span></a>
     </nav>
+    <!-- Centre button above the bar: Scan barcode or Quick add (like a wallet app's Scan QR) -->
+    <div class="fab-backdrop" id="fabBackdrop" hidden></div>
+    <div class="fab-menu" id="fabMenu" hidden>
+      <button class="fab-bubble" id="scanBtn" type="button"><span class="fab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M4 4h4v2H6v2H4V4Zm12 0h4v4h-2V6h-2V4ZM4 16h2v2h2v2H4v-4Zm14 2v-2h2v4h-4v-2h2ZM7 8h1.5v8H7V8Zm3 0h1v8h-1V8Zm2.5 0H14v8h-1.5V8Zm3 0h1v8h-1V8Z"/></svg></span><span>Scan barcode</span></button>
+      <button class="fab-bubble" id="quickBtn" type="button"><span class="fab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg></span><span>Quick add</span></button>
+    </div>
+    <button class="fab" id="fabBtn" type="button" aria-label="Scan barcode or quick add" aria-expanded="false" aria-controls="fabMenu">
+      <svg class="fab-open" viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M4 4h4v2H6v2H4V4Zm12 0h4v4h-2V6h-2V4ZM4 16h2v2h2v2H4v-4Zm14 2v-2h2v4h-4v-2h2ZM7 8h1.5v8H7V8Zm3 0h1v8h-1V8Zm2.5 0H14v8h-1.5V8Zm3 0h1v8h-1V8Z"/></svg>
+      <svg class="fab-close" viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M6.7 5.3a1 1 0 0 0-1.4 1.4L10.6 12l-5.3 5.3a1 1 0 1 0 1.4 1.4l5.3-5.3 5.3 5.3a1 1 0 0 0 1.4-1.4L13.4 12l5.3-5.3a1 1 0 0 0-1.4-1.4L12 10.6 6.7 5.3Z"/></svg>
+    </button>
   </div>
 
   <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>

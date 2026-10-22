@@ -142,6 +142,12 @@
       indexAliases(food, al);
       foods.push(food); byId[food.id] = food; byName[name] = food;
     }
+    // Estimate dishes with an ingredient list (suggestions.js): one serving's parts, so each can be adjusted
+    for (const [name, parts] of Object.entries(global.MID_DISH_PARTS || {})) {
+      const dish = byName[name]; if (!dish || !dish.sugg) continue;
+      const resolved = parts.map(([n, g]) => ({ food: byName[n], grams: g })).filter(x => x.food);
+      if (resolved.length === parts.length) dish.dishParts = resolved;
+    }
   }
 
   // ---------- Matching ----------

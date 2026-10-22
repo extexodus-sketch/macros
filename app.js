@@ -145,12 +145,12 @@ window.MacrosApp = { start(ctx) {
     + (unit && !food.units[unit] && unit !== 'g' ? `<option value="${unit}" selected>${esc(E.unitLabel(unit, 1))}</option>` : '');
   const amtLabel = (food, qty, unit, grams) => unit === 'g' ? `${fmt(grams, 0)} g` : unit === 'kcal' ? `${fmt(grams, 0)} g (${k0(qty)} kcal)` : `${E.amountText(food, qty, unit)} · ${fmt(grams, 0)} g`;
 
-  // Log foods into the current day. list: [{food, qty, unit, grams}]
+  // Log foods into the current day. list: [{food, qty, unit, grams}], plus optional m / name / amt for an adjusted dish
   function logToDay(list, meal) {
     const day = curDay(); const added = []; let kc = 0;
     for (const it of list) {
-      const m = E.macros(it.food, it.grams); kc += m.kcal;
-      const e = { id: uid(), fid: it.food.id, name: it.food.name, amt: amtLabel(it.food, it.qty, it.unit, it.grams), grams: r1(it.grams), meal, t: Date.now(),
+      const m = it.m || E.macros(it.food, it.grams); kc += m.kcal;
+      const e = { id: uid(), fid: it.food.id, name: it.name || it.food.name, amt: it.amt || amtLabel(it.food, it.qty, it.unit, it.grams), grams: r1(it.grams), meal, t: Date.now(),
         est: !!it.food.sugg, kcal: r1(m.kcal), p: r1(m.p), c: r1(m.c), f: r1(m.f), fib: r1(m.fib) };
       day.entries.push(e); added.push(e.id);
       recent = [it.food.id, ...recent.filter(x => x !== it.food.id)].slice(0, 12);
@@ -227,7 +227,7 @@ window.MacrosApp = { start(ctx) {
   // ==========================================================
   const q = $('#q');
   let items = [], parsedMeal = null, typingT;
-  let recentOpen = false, listening = false, viaVoice = false, flashNext = null;   // viaVoice: the box was filled by speaking
+  let recentOpen = false, listening = false, flashNext = null;
 
   q.addEventListener('input', () => { autosize(); clearTimeout(typingT); typingT = setTimeout(identify, 160); });
   q.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addCurrent(); } });
@@ -245,7 +245,7 @@ window.MacrosApp = { start(ctx) {
   function renderResults() {
     // Browse foods stays below the matches, so you can add more foods from it
     const box = $('#results');
-    if (!q.value.trim()) { viaVoice = false; box.innerHTML = emptyState(); return; }
+    if (!q.value.trim()) { box.innerHTML = emptyState(); return; }
     if (!items.length) { box.innerHTML = '<p class="muted" style="margin:18px 4px">Keep typing — add the food name.</p>'; return; }
     const foods = items.filter(i => i.kind === 'food');
     let html = '';
@@ -319,6 +319,7 @@ window.MacrosApp = { start(ctx) {
         ${stateToggle(it.food)}
       </div>
       <div class="item-macros" data-k="macros">${itemMacrosHtml(m)}</div>
+      ${it.food.dishParts && !it.parent ? '<div class="row-actions" style="margin-top:8px"><button class="btn small outline" type="button" data-act="adjust">Adjust ingredients</button></div>' : ''}
       <div class="item-foot"><span>You typed “${esc(it.query)}”</span>${alts}</div>
       ${notes.map(n => `<div class="note">${esc(n)}</div>`).join('')}
     </div>`;
@@ -389,6 +390,10 @@ window.MacrosApp = { start(ctx) {
       }
       renderResults();
     }
+    if (act === 'adjust') {
+      const per = it.food.units[it.food.d] || 100;
+      openCombo(it.food, { qty: it.grams / per, onLogged: () => { items.splice(i, 1); if (!items.length) { q.value = ''; autosize(); } renderResults(); return items.length > 0; } });
+    }
     if (act === 'custom') openCustomForm({ name: it.query });
     if (act === 'find') openPicker(i);
   });
@@ -413,11 +418,16 @@ window.MacrosApp = { start(ctx) {
     if (!foods.length) return toast('Nothing to add yet.');
     const meal = $('#mealSel') ? $('#mealSel').value : defaultMeal();
     const { added, kc, day } = logToDay(foods, meal); pendingMeal = null;
-    const backup = q.value, spoken = viaVoice;
+    const backup = q.value;
     q.value = ''; autosize(); identify();
     toast(`Added ${foods.length} to Day ${day.n} · ${meal} · ${k0(kc)} kcal`, { label: 'Undo', run: () => { undoLog(day, added); setQuery(backup); } });
-    // Spoken: go to the Dashboard and show where it went
-    if (spoken) { flashNext = { ids: added, meal }; dashPage = 'day'; location.hash = '#day'; }
+    showLogged(added, meal);
+  }
+  // After any add: open the Dashboard and highlight the meal and foods that just went in
+  function showLogged(ids, meal) {
+    flashNext = { ids, meal }; dashPage = 'day';
+    if (!viewOpen('day')) { location.hash = '#day'; return; }   // route() renders, then flashes
+    viewIdx = days.length - 1; showDash('day'); const f = flashNext; flashNext = null; requestAnimationFrame(() => flashLogged(f));
   }
   function flashLogged({ ids, meal }) {
     const head = $$('#dayBody .meal-head').find(h => h.querySelector('h2').textContent === meal);
@@ -441,7 +451,7 @@ window.MacrosApp = { start(ctx) {
     rec.onstart = () => { listening = true; mic.classList.add('listening'); vs.classList.add('on'); vs.textContent = 'Listening… say what you ate, then pause.'; };
     rec.onresult = e => {
       let txt = ''; for (let i = 0; i < e.results.length; i++) txt += e.results[i][0].transcript;
-      q.value = base + txt; autosize(); identify(); if (txt.trim()) viaVoice = true;
+      q.value = base + txt; autosize(); identify();
     };
     rec.onerror = e => {
       const msg = { 'not-allowed': 'Microphone blocked. Allow mic access for this page in your browser settings.',
@@ -632,7 +642,7 @@ window.MacrosApp = { start(ctx) {
   function foodRow(f) {
     const def = f.parts ? { qty: 1, unit: 'plate', grams: f.comboGrams } : E.amount(f, null, null);
     const m = E.macros(f, def.grams);
-    const per = f.parts ? `${f.parts.length} parts · per plate` : `per 100 g · ${k0(f.kcal)} kcal`;
+    const per = f.parts ? `${f.parts.length} parts · per plate` : f.dishParts ? `${f.dishParts.length} ingredients · per 100 g · ${k0(f.kcal)} kcal` : `per 100 g · ${k0(f.kcal)} kcal`;
     return `<button class="food-row" type="button" data-id="${esc(f.id)}"><div class="fr-main"><div class="fr-name">${esc(f.name)} ${tag(f)}</div><div class="fr-sub">${per}</div>${mchips(f.parts ? m : f, false)}</div>
       <div class="fr-kcal">${k0(m.kcal)}<small>${f.parts ? '1 plate' : esc(E.amountText(f, def.qty, def.unit))}</small></div></button>`;
   }
@@ -678,7 +688,7 @@ window.MacrosApp = { start(ctx) {
 
   function openFood(id) {
     const f = E.byId(id); if (!f) return;
-    if (f.parts) return openCombo(f);
+    if (f.parts || f.dishParts) return openCombo(f);
     const def = E.amount(f, null, null);
     const sub = esc(f.cat) + (f.sugg ? ' · estimate, not lab-verified (±15–20%)' : f.src === 'F' ? ' · FNRI Philippine Food Composition Tables' : f.src === 'U' ? ' · USDA FoodData Central' : '');
     const recipe = f.recipe && f.recipe.ingredients ? `<div class="eyebrow" style="margin-top:16px">Ingredients · makes ${fmt(f.recipe.totalG, 0)} g</div><ul class="parts">${f.recipe.ingredients.map(x => `<li><span>${esc(x.name)}</span><span class="muted">${fmt(x.grams, 0)} g</span></li>`).join('')}</ul>` : '';
@@ -707,6 +717,7 @@ window.MacrosApp = { start(ctx) {
       const { qty, unit, g } = calc(); if (!g) return toast('Enter an amount first.');
       const meal = $('#fdMeal').value; const { added, kc, day } = logToDay([{ food: f, qty, unit, grams: g }], meal); closeSheet();
       toast(`Added to Day ${day.n} · ${meal} · ${k0(kc)} kcal`, { label: 'Undo', run: () => undoLog(day, added) });
+      showLogged(added, meal);
     };
     $('#fdUse').onclick = () => { const { qty, unit } = calc(); closeSheet(); location.hash = '#add'; appendQuery(`${E.amountText(f, qty, unit)} ${f.key}`); };
     if (f.custom) {
@@ -718,57 +729,88 @@ window.MacrosApp = { start(ctx) {
     }
   }
   // Silog meals: change each part's grams, add extras (e.g. one more hotdog), and log by plates or by grams
-  function openCombo(f) {
-    const parts = f.parts.map(pt => ({ food: pt.food, base: pt.grams, grams: pt.grams }));
-    const plateG = () => parts.reduce((a, pt) => a + pt.grams, 0);
-    let mode = 'plate';
+  // Meals built from parts: silog meals (f.parts, logged part by part) and estimate dishes (f.dishParts, logged as one entry).
+  // Each part has None · Less · Normal · More · Lots, plus Oil / fat for the whole plate; "Exact grams" is there for anyone who weighs.
+  const LEVELS = [[0, 'None', 'no'], [0.5, 'Less', 'less'], [1, 'Normal', ''], [1.5, 'More', 'more'], [2, 'Lots', 'lots of']];
+  const OIL = [[0, 'Normal'], [7, 'Oily'], [14, 'Very oily']];   // extra cooking oil per serving, g (½ tbsp, 1 tbsp)
+  const partName = food => food.name === 'Water' ? 'Soup / sauce (water)' : food.name;
+  const partWord = food => food.name === 'Water' ? 'soup' : food.name.split(/[,(/]/)[0].trim().toLowerCase();   // "Lechon / roasted pork belly" → "lechon"
+  function openCombo(f, opts) {
+    opts = opts || {};
+    const dish = !f.parts;   // estimate dish: one entry; silog meal: one entry per part
+    const unit = dish ? f.d : 'plate';
+    const parts = (dish ? f.dishParts : f.parts).map(pt => ({ food: pt.food, base: pt.grams, grams: pt.grams }));
+    const oilFood = E.all().find(x => x.name === 'Cooking oil' && !x.custom);
+    let oil = 0, exact = false, mode = 'serving';
+    const servG = () => parts.reduce((a, pt) => a + pt.grams, 0) + (oilFood ? oil : 0);
+    const uLabel = n => E.unitLabel(unit, n);
     const pieceUnit = food => ['pc', 'piece', 'slice', 'stick'].find(k => food.units[k]);
-    const pcs = pt => { const u = pieceUnit(pt.food); return u ? ` · ${fmt(pt.grams / pt.food.units[u], 1)} ${E.unitLabel(u, pt.grams / pt.food.units[u])}` : ''; };
+    const pcs = pt => { const u = pieceUnit(pt.food), c = u ? pt.grams / pt.food.units[u] : 0; return c >= 0.5 ? ` · ${fmt(c, 1)} ${E.unitLabel(u, c)}` : ''; };   // skip "0.1 pcs" of onion
     const extra = pt => { const u = pieceUnit(pt.food); return u ? { g: pt.food.units[u], label: `+1 ${E.unitLabel(u, 1)}` } : { g: pt.base, label: '+ extra' }; };
-    openSheet(`${sheetHead(esc(f.name) + ' ' + badge(f), 'Silog meal · change any part, or add an extra' + (f.sugg ? ' · includes estimated parts' : ''))}
-      <div class="item-amount"><input class="input qty" id="cbQty" type="number" inputmode="decimal" min="0" step="any" value="1" aria-label="Amount">
-        <select class="select" id="cbMode" aria-label="Unit"><option value="plate">plate(s)</option><option value="g">grams (whole plate)</option></select>
+    const level = pt => { const r = pt.base ? pt.grams / pt.base : 1; const hit = LEVELS.find(([v]) => Math.abs(v - r) < 0.01); return hit ? hit[0] : null; };
+    const sub = dish ? `${parts.length} ingredients · tap Less or More to match your plate · estimate` : 'Silog meal · tap Less or More to match your plate';
+    openSheet(`${sheetHead(esc(f.name) + ' ' + badge(f), sub)}
+      <div class="item-amount"><input class="input qty" id="cbQty" type="number" inputmode="decimal" min="0" step="any" value="${opts.qty ? r1(opts.qty) : 1}" aria-label="Amount">
+        <select class="select" id="cbMode" aria-label="Unit"><option value="serving">${esc(E.unitLabel(unit, 2))}</option><option value="g">grams (whole ${esc(uLabel(1))})</option></select>
         <span class="grams" id="cbInfo"></span></div>
       <div style="margin-top:14px"><div class="kcal-big" id="cbKcal"></div><div id="cbTiles"></div></div>
-      <div class="eyebrow" style="margin-top:16px">What's on 1 plate</div>
+      <div class="cb-head"><span class="eyebrow">What's in 1 ${esc(uLabel(1))}</span><button class="linkish small-link" type="button" id="cbExact"></button></div>
       <ul class="parts combo-parts" id="cbParts"></ul>
+      ${oilFood ? `<div class="cb-oil"><span>Oil / fat</span><div class="lvl" role="group" aria-label="Oil or fat">${OIL.map(([g, l]) => `<button type="button" data-oil="${g}">${l}</button>`).join('')}</div></div>` : ''}
       <div class="add-row">${mealSelect('cbMeal', defaultMeal())}<button class="btn grow" type="button" id="cbAdd">Add to Day ${curDay().n}</button></div>
-      <div class="row-actions"><button class="btn ghost small" type="button" id="cbUse">Add to my list to adjust</button></div>`);
-    const plates = () => { const v = parseFloat($('#cbQty').value) || 0; return mode === 'g' ? (plateG() ? v / plateG() : 0) : v; };
+      ${dish ? '' : '<div class="row-actions"><button class="btn ghost small" type="button" id="cbUse">Add to my list to adjust</button></div>'}`);
+    const servings = () => { const v = parseFloat($('#cbQty').value) || 0; return mode === 'g' ? (servG() ? v / servG() : 0) : v; };
+    const partLine = pt => `≈ ${fmt(pt.grams, 0)} g · ${k0(E.macros(pt.food, pt.grams).kcal)} kcal${pcs(pt)}`;
     const renderParts = () => {
-      $('#cbParts').innerHTML = parts.map((pt, i) => `<li data-pi="${i}"><div class="cp-name">${esc(pt.food.name)} ${tag(pt.food)}<small class="muted">${k0(E.macros(pt.food, pt.grams).kcal)} kcal${pcs(pt)}</small></div>
-        <div class="cp-amt"><input class="input" type="number" inputmode="decimal" min="0" step="any" value="${Math.round(pt.grams)}" aria-label="Grams of ${esc(pt.food.name)}" data-pg><span class="muted">g</span>
-          <button class="btn ghost small" type="button" data-extra title="Add ${fmt(extra(pt).g, 0)} g more ${esc(pt.food.name)}">${esc(extra(pt).label)}</button></div></li>`).join('');
+      $('#cbExact').textContent = exact ? 'Use Less / More' : 'Exact grams';
+      $('#cbParts').innerHTML = parts.map((pt, i) => `<li data-pi="${i}"><div class="cp-name">${esc(partName(pt.food))} ${tag(pt.food)}<small class="muted">${partLine(pt)}</small></div>
+        ${exact ? `<div class="cp-amt"><input class="input" type="number" inputmode="decimal" min="0" step="any" value="${Math.round(pt.grams)}" aria-label="Grams of ${esc(pt.food.name)}" data-pg><span class="muted">g</span>
+          <button class="btn ghost small" type="button" data-extra title="Add ${fmt(extra(pt).g, 0)} g more ${esc(pt.food.name)}">${esc(extra(pt).label)}</button></div>`
+        : `<div class="lvl" role="group" aria-label="How much ${esc(pt.food.name)}">${LEVELS.map(([v, l]) => `<button type="button" data-lvl="${v}" class="${level(pt) === v ? 'on' : ''}" aria-pressed="${level(pt) === v}">${l}</button>`).join('')}</div>`}</li>`).join('');
+      $$('#sheet [data-oil]').forEach(b => { const on = +b.dataset.oil === oil; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
     };
     const calc = () => {
-      const n = plates(); const m = E.sumMacros(parts.map(pt => E.macros(pt.food, pt.grams * n)));
+      const n = servings();
+      const m = E.sumMacros([...parts.map(pt => E.macros(pt.food, pt.grams * n)), ...(oilFood && oil ? [E.macros(oilFood, oil * n)] : [])]);
       $('#cbKcal').innerHTML = `${k0(m.kcal)}<span>kcal</span>`; $('#cbTiles').innerHTML = macroTiles(m, false);
-      $('#cbInfo').textContent = mode === 'g' ? `≈ ${fmt(n, 2)} plate${n === 1 ? '' : 's'}` : `= ${fmt(plateG() * n, 0)} g`;
-      parts.forEach((pt, i) => { const li = $(`#cbParts [data-pi="${i}"] small`); if (li) li.textContent = `${k0(E.macros(pt.food, pt.grams).kcal)} kcal${pcs(pt)}`; });
-      return n;
+      $('#cbInfo').textContent = mode === 'g' ? `≈ ${fmt(n, 2)} ${uLabel(n)}` : `= ${fmt(servG() * n, 0)} g`;
+      parts.forEach((pt, i) => { const li = $(`#cbParts [data-pi="${i}"] small`); if (li) li.textContent = partLine(pt); });
+      return { n, m };
     };
+    // Keep the grams box in step when parts change (it means "the whole plate")
+    const changed = () => { const n = servings(); return () => { if (mode === 'g') $('#cbQty').value = Math.round(servG() * n); }; };
     renderParts(); calc();
     $('#cbQty').addEventListener('input', calc);
-    $('#cbMode').addEventListener('change', e => { const n = plates(); mode = e.target.value; $('#cbQty').value = mode === 'g' ? Math.round(plateG() * n) : r1(n) || 1; calc(); });
+    $('#cbMode').addEventListener('change', e => { const n = servings(); mode = e.target.value; $('#cbQty').value = mode === 'g' ? Math.round(servG() * n) : r1(n) || 1; calc(); });
+    $('#cbExact').onclick = () => { exact = !exact; renderParts(); };
+    $('#cbParts').addEventListener('click', e => {
+      const lv = e.target.closest('[data-lvl]'), ex = e.target.closest('[data-extra]'); if (!lv && !ex) return;
+      const sync = changed(); const pt = parts[+e.target.closest('[data-pi]').dataset.pi];
+      if (lv) pt.grams = pt.base * +lv.dataset.lvl; else pt.grams += extra(pt).g;
+      sync(); renderParts(); calc();
+    });
     $('#cbParts').addEventListener('input', e => {
       if (!e.target.matches('[data-pg]')) return;
-      const n = plates(); parts[+e.target.closest('[data-pi]').dataset.pi].grams = Math.max(0, parseFloat(e.target.value) || 0);
-      if (mode === 'g') $('#cbQty').value = Math.round(plateG() * n);
-      calc();
+      const sync = changed(); parts[+e.target.closest('[data-pi]').dataset.pi].grams = Math.max(0, parseFloat(e.target.value) || 0);
+      sync(); calc();
     });
-    $('#cbParts').addEventListener('click', e => {
-      if (!e.target.closest('[data-extra]')) return;
-      const n = plates(); const pt = parts[+e.target.closest('[data-pi]').dataset.pi];
-      pt.grams += extra(pt).g; if (mode === 'g') $('#cbQty').value = Math.round(plateG() * n);
-      renderParts(); calc();
-    });
-    const asItems = n => parts.filter(pt => pt.grams > 0).map(pt => ({ kind: 'food', food: pt.food, qty: Math.round(pt.grams * n), unit: 'g', grams: pt.grams * n, note: '', parent: f.name, query: f.name, alts: [] }));
+    $$('#sheet [data-oil]').forEach(b => b.addEventListener('click', () => { const sync = changed(); oil = +b.dataset.oil; sync(); renderParts(); calc(); }));
+    // What changed, in words: "more beef, no egg, oily"
+    const changes = () => [...parts.map(pt => { const lv = level(pt); if (lv === 1) return ''; if (lv === null) return `${fmt(pt.grams, 0)} g ${partWord(pt.food)}`;
+      const w = LEVELS.find(x => x[0] === lv)[2]; return `${w} ${partWord(pt.food)}`; }), oil ? OIL.find(x => x[0] === oil)[1].toLowerCase() : ''].filter(Boolean);
+    const asItems = n => [...parts.filter(pt => pt.grams > 0).map(pt => ({ food: pt.food, grams: pt.grams * n })), ...(oilFood && oil ? [{ food: oilFood, grams: oil * n }] : [])]
+      .map(x => ({ kind: 'food', food: x.food, qty: Math.round(x.grams), unit: 'g', grams: x.grams, note: '', parent: f.name, query: f.name, alts: [] }));
     $('#cbAdd').onclick = () => {
-      const n = calc(); if (!n || !plateG()) return toast('Enter an amount first.'); const meal = $('#cbMeal').value;
-      const { added, kc, day } = logToDay(asItems(n), meal); closeSheet();
+      const { n, m } = calc(); if (!n || !servG()) return toast('Enter an amount first.'); const meal = $('#cbMeal').value;
+      const ch = changes();
+      const list = dish ? [{ food: f, qty: n, unit, grams: servG() * n, m, name: f.name + (ch.length ? ' · ' + ch.join(', ') : ''),
+        amt: `${fmt(n, 2)} ${uLabel(n)} · ${fmt(servG() * n, 0)} g` }] : asItems(n);
+      const { added, kc, day } = logToDay(list, meal); closeSheet();
       toast(`Added to Day ${day.n} · ${meal} · ${k0(kc)} kcal`, { label: 'Undo', run: () => undoLog(day, added) });
+      // Opened from a search list that still has other foods in it: stay on Add so they can be added too
+      if (!(opts.onLogged && opts.onLogged())) showLogged(added, meal);
     };
-    $('#cbUse').onclick = () => { const n = calc(); closeSheet(); location.hash = '#add'; items = asItems(n); q.value = `${fmt(n, 2)} ${f.key}`; autosize(); renderResults(); };
+    if (!dish) $('#cbUse').onclick = () => { const { n } = calc(); closeSheet(); location.hash = '#add'; items = asItems(n); q.value = `${fmt(n, 2)} ${f.key}`; autosize(); renderResults(); };
   }
   // Swap one matched item for any food, keeping its weight
   function openPicker(i) {
@@ -820,11 +862,24 @@ window.MacrosApp = { start(ctx) {
         kcal: r1(kcal), p: r1(n('p')), c: r1(n('c')), f: r1(n('f')), fib: r1(n('fib')) };
       day.entries.push(e); settings.lastMeal = meal; pendingMeal = null; saveSettings(); saveDays(); updatePill(); closeSheet();
       toast(`Added ${name} to Day ${day.n} · ${meal} · ${k0(kcal)} kcal`, { label: 'Undo', run: () => undoLog(day, [e.id]) });
+      showLogged([e.id], meal);
     });
   }
 
   // ---------- Barcode: scan → your saved products → Open Food Facts → type the label once ----------
   $('#scanBtn').addEventListener('click', () => openScanner());
+
+  // Centre button above the bottom bar: opens two bubbles, Scan barcode and Quick add
+  function setFab(open) {
+    $('#fabMenu').hidden = !open; $('#fabBackdrop').hidden = !open;
+    $('#fabBtn').classList.toggle('open', open); $('#fabBtn').setAttribute('aria-expanded', open);
+    $('#fabBtn').setAttribute('aria-label', open ? 'Close' : 'Scan barcode or quick add');
+  }
+  $('#fabBtn').addEventListener('click', () => setFab($('#fabMenu').hidden));
+  $('#fabBackdrop').addEventListener('click', () => setFab(false));
+  ['#scanBtn', '#quickBtn'].forEach(s => $(s).addEventListener('click', () => setFab(false)));
+  window.addEventListener('hashchange', () => setFab(false));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#fabMenu').hidden) setFab(false); });
   let scanStop = null;
   const ZXING = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
   const loadScript = src => new Promise((ok, fail) => { const el = document.createElement('script'); el.src = src; el.onload = ok; el.onerror = fail; document.head.appendChild(el); });
@@ -1628,7 +1683,7 @@ window.MacrosApp = { start(ctx) {
     { go: '#day', page: 'day', sel: '#waterDash', t: 'Drink water', b: 'Tap the glass after every glass of water. It fills up toward your daily goal.' },
     { go: '#day', page: 'day', sel: '#dayBody [data-act="newday"]', t: 'Start a new day', b: 'When your day ends, tap <b>Start Day</b>. Days never change by themselves at midnight.' },
     { go: '#add', sel: '#askBox', t: 'Type or say what you ate', b: '<i>“2 eggs and 1 cup rice”</i>, <i>“150 g chicken breast”</i>, or by calories: <i>“300 kcal nuggets”</i>. Tap the mic to speak instead.' },
-    { go: '#add', sel: '#view-add .quick-row', t: 'Scan or quick add', b: '<b>Scan barcode</b> on packaged food from the grocery or 7-Eleven. <b>Quick add</b> lets you type calories and macros yourself.' },
+    { go: '#add', sel: '#fabBtn', t: 'Scan or quick add', b: 'Tap the round button above the bar. <b>Scan barcode</b> on packaged food from the grocery or 7-Eleven, or <b>Quick add</b> to type calories and macros yourself.' },
     { go: '#add', sel: '#cats', t: 'Browse foods', b: 'Tap <b>Protein</b>, <b>Carbs</b>, <b>Fat</b> or <b>Fiber</b> to see the best sources, or open a category below. Foods marked <b>Estimate</b> are recipe estimates.' },
     { go: '#menu', sel: '#menuBody .menu-list', t: 'The Menu', b: '<b>Goals</b> for your targets and phases, <b>Progress</b> for your results, <b>Tutorial</b> for this tour and your checklist, and <b>Settings</b>.' },
     { go: '#goals', sel: '#maintVal', t: 'Maintenance calories', b: 'What you burn in a normal day. Type your own number any time; your phases are built on it.' },

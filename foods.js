@@ -108,6 +108,7 @@ window.MID_FOODS = (() => {
     ["Lettuce (romaine), raw", "lettuce|romaine|salad greens|salad|green salad|letsugas|garden salad", VG, 17, 1.2, 3.3, 0.3, 2.1, "cup:47", "U"],
     ["Spinach, raw", "spinach|baby spinach", VG, 23, 2.9, 3.6, 0.4, 2.2, "cup:30", "U"],
     ["Onion, raw", "onion|sibuyas|onions|red onion|white onion", VG, 40, 1.1, 9.3, 0.1, 1.7, "pc:110,tbsp:10", "U"],
+    ["Spring onion, raw", "spring onion|spring onions|scallion|scallions|green onion|dahon ng sibuyas|sibuyas dahon", VG, 32, 1.8, 7.3, 0.2, 2.6, "tbsp:6,pc:15", "U"], // USDA FDC 170005
     ["Garlic, raw", "garlic|bawang|garlic clove", VG, 149, 6.4, 33, 0.5, 2.1, "clove:3,tbsp:8.5", "U"],
     ["Mushrooms, cooked", "mushrooms|mushroom|button mushroom|kabute|shiitake|button mushrooms", VG, 28, 3.6, 4, 0.3, 1.8, "cup:108", "U"],
     ["Bean sprouts (togue), boiled", "togue|toge|bean sprouts|mung bean sprouts|sprouts", VG, 21, 2, 4.2, 0.1, 0.8, "cup:124", "U"],

@@ -4,6 +4,18 @@
  * kind: feature (big) · improvement (smaller change) · fix
  */
 window.MACROS_UPDATES = [
+  { at: '2026-10-21 10:01', kind: 'feature', title: 'Scan and Quick add in the middle',
+    body: 'Scan barcode and Quick add moved from the top of Add to the round button above the bottom bar, on every page. Tap it, then pick one of the two bubbles.' },
+  { at: '2026-10-21 10:00', kind: 'improvement', title: 'Every add shows where it went',
+    body: 'However you add food (typing, speaking, Browse foods, a meal, Quick add or a barcode), maCros now opens the Dashboard and highlights the meal and food you just added.' },
+
+  { at: '2026-10-20 15:02', kind: 'feature', title: 'Adjust your meal: Less, Normal, More',
+    body: 'Silog meals and 23 everyday dishes (pares, sinigang, adobo, sisig, kare-kare, pancit and more) now show what’s in them. Tap None, Less, Normal, More or Lots on any ingredient, and Normal, Oily or Very oily for oil and fat, to match what’s on your plate. The total updates as you tap.' },
+  { at: '2026-10-20 15:01', kind: 'improvement', title: 'Adjust ingredients from search',
+    body: 'Typed or said a dish like “pares”? Pick the estimate, then tap Adjust ingredients.' },
+  { at: '2026-10-20 15:00', kind: 'improvement', title: 'Spring onion',
+    body: 'Spring onion (dahon ng sibuyas) is now in the food list, using USDA values.' },
+
   { at: '2026-10-20 13:30', kind: 'feature', title: 'What’s new',
     body: 'This bell at the top left lists every update to maCros, big and small. A number on it means there’s something you haven’t seen yet.' },
 
