@@ -4,6 +4,9 @@
  * kind: feature (big) · improvement (smaller change) · fix
  */
 window.MACROS_UPDATES = [
+  { at: '2026-10-22 11:00', kind: 'feature', title: 'Scan label',
+    body: 'Tap the round button, then Scan label, and take a photo of the Nutrition Facts. maCros reads the calories, protein, carbs, fat, fiber and serving size for you to check, then asks if you want to save it to My Foods. Scan a saved label again and it shows “You saved this before” for a one-tap add. The photo is read on your phone and never uploaded.' },
+
   { at: '2026-10-21 10:01', kind: 'feature', title: 'Scan and Quick add in the middle',
     body: 'Scan barcode and Quick add moved from the top of Add to the round button above the bottom bar, on every page. Tap it, then pick one of the two bubbles.' },
   { at: '2026-10-21 10:00', kind: 'improvement', title: 'Every add shows where it went',

@@ -869,15 +869,15 @@ window.MacrosApp = { start(ctx) {
   // ---------- Barcode: scan → your saved products → Open Food Facts → type the label once ----------
   $('#scanBtn').addEventListener('click', () => openScanner());
 
-  // Centre button above the bottom bar: opens two bubbles, Scan barcode and Quick add
+  // Centre button above the bottom bar: opens three bubbles, Scan barcode, Scan label and Quick add
   function setFab(open) {
     $('#fabMenu').hidden = !open; $('#fabBackdrop').hidden = !open;
     $('#fabBtn').classList.toggle('open', open); $('#fabBtn').setAttribute('aria-expanded', open);
-    $('#fabBtn').setAttribute('aria-label', open ? 'Close' : 'Scan barcode or quick add');
+    $('#fabBtn').setAttribute('aria-label', open ? 'Close' : 'Scan barcode, scan label or quick add');
   }
   $('#fabBtn').addEventListener('click', () => setFab($('#fabMenu').hidden));
   $('#fabBackdrop').addEventListener('click', () => setFab(false));
-  ['#scanBtn', '#quickBtn'].forEach(s => $(s).addEventListener('click', () => setFab(false)));
+  ['#scanBtn', '#labelBtn', '#quickBtn'].forEach(s => $(s).addEventListener('click', () => setFab(false)));
   window.addEventListener('hashchange', () => setFab(false));
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#fabMenu').hidden) setFab(false); });
   let scanStop = null;
@@ -954,6 +954,185 @@ window.MacrosApp = { start(ctx) {
         : 'Not found. Copy the nutrition facts from the label once; maCros remembers this barcode for next time.',
       onSaved: row => { toast(`Saved ${row.name}. Choose how much you had.`); openFood(row.id); },
     });
+  }
+
+  // ---------- Scan label: photo of the Nutrition Facts → read on this phone → check → add, and save if you want ----------
+  // Text is read on the device with Tesseract (free, no API, nothing uploaded). It loads from jsDelivr the first time only.
+  const TESSERACT = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+  $('#labelBtn').addEventListener('click', () => openLabelScan());
+  function openLabelScan() {
+    openSheet(`${sheetHead('Scan a label', 'Take a clear, straight photo of the Nutrition Facts. It’s read on your phone; the photo isn’t sent anywhere.')}
+      <label class="btn wide label-pick" id="labelPick">Take or choose a photo<input type="file" id="labelFile" accept="image/*" hidden></label>
+      <p class="muted small" id="labelMsg" aria-live="polite" style="margin:10px 2px 0">Fill the photo with the table, in good light and without glare. The first scan downloads the label reader (about 6 MB).</p>
+      <div class="row-actions"><button class="btn ghost small" type="button" id="labelType">Type the numbers instead</button></div>`);
+    const msg = t => { const m = $('#labelMsg'); if (m) m.textContent = t; };
+    $('#labelType').onclick = () => { closeSheet(); openQuickAdd(); };
+    $('#labelFile').onchange = async e => {
+      const file = e.target.files[0]; if (!file) return;
+      $('#labelPick').classList.add('busy'); msg('Getting the label reader ready…');
+      try {
+        const text = await readLabelText(file, msg);
+        if (!$('#labelFile')) return;   // sheet was closed while reading
+        openLabelCheck(parseLabel(text), text);
+      } catch (err) {
+        console.warn(err); $('#labelPick') && $('#labelPick').classList.remove('busy');
+        msg(navigator.onLine ? 'Couldn’t read that photo. Try again, or type the numbers instead.' : 'The first scan needs internet to download the label reader. Type the numbers instead for now.');
+      }
+    };
+  }
+  async function readLabelText(file, msg) {
+    if (!window.Tesseract) await loadScript(TESSERACT);
+    const img = await labelImage(file);
+    const { data } = await Tesseract.recognize(img, 'eng', { logger: m => {
+      if (m.status === 'recognizing text') msg(`Reading the label… ${Math.round(m.progress * 100)}%`);
+      else if (/loading|initializ/.test(m.status)) msg('Getting the label reader ready…');
+    } });
+    return data.text || '';
+  }
+  // Shrink big phone photos and turn them grey with more contrast: faster and easier to read
+  async function labelImage(file) {
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, 1800 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    const x = c.getContext('2d'); x.drawImage(bmp, 0, 0, c.width, c.height);
+    const d = x.getImageData(0, 0, c.width, c.height), px = d.data;
+    let lo = 255, hi = 0;
+    for (let i = 0; i < px.length; i += 4) { const g = px[i] * .299 + px[i + 1] * .587 + px[i + 2] * .114; px[i] = g; if (g < lo) lo = g; if (g > hi) hi = g; }
+    const span = Math.max(hi - lo, 1);
+    for (let i = 0; i < px.length; i += 4) { const g = (px[i] - lo) * 255 / span; px[i] = px[i + 1] = px[i + 2] = g; }
+    x.putImageData(d, 0, 0);
+    return c;
+  }
+  // Pull calories, macros and the serving size out of the label text. Missing numbers stay blank for you to fill in.
+  function parseLabel(raw) {
+    const t = String(raw).toLowerCase()
+      .replace(/(\d),(\d)/g, '$1.$2')                       // 1,5 g → 1.5 g
+      .replace(/(\d)o(?=\s*(?:g|mg|kcal|kj|%|\d|\b))/g, '$10') // OCR: 1Og → 10g
+      .replace(/\b[il|](?=\d)/g, '1')                        // OCR: l0g → 10g
+      .replace(/(\d+\.\d)9(?=\s|$)/gm, '$1 g');              // OCR reads "g" as 9: 6.09 → 6.0 g
+    const lines = t.split(/\n+/);
+    const NUM = /(\d+(?:\.\d+)?)\s*(kcal|cal|kj|mg|g|ml)?(\s*%)?/g;
+    const after = (key, skip, unitOk) => {
+      for (const line of lines) {
+        const m = line.match(key); if (!m || (skip && skip.test(line))) continue;
+        NUM.lastIndex = 0; const rest = line.slice(m.index + m[0].length); let n;
+        while ((n = NUM.exec(rest))) { if (n[3]) continue; if (unitOk(n[2])) return parseFloat(n[1]); }
+      }
+      return null;
+    };
+    const grams = u => u !== 'mg' && u !== 'kj';
+    let kcal = null;
+    for (const full of lines) {
+      const line = full.replace(/calories\s*from\s*fat.*$/, '');   // "Calories 150   Calories from Fat 70"
+      if (!/calor|energy|enerhiya|kcal/.test(line)) continue;
+      const kc = line.match(/(\d+(?:\.\d+)?)\s*(?:kcal|cal\b)/), kj = line.match(/(\d+(?:\.\d+)?)\s*kj/);
+      if (kc) { kcal = parseFloat(kc[1]); break; }
+      if (kj) { kcal = Math.round(parseFloat(kj[1]) / 4.184); break; }
+      const n = after(/calories|energy|enerhiya/, null, u => !u || u === 'kcal' || u === 'cal'); if (n != null) { kcal = n; break; }
+    }
+    const v = {
+      kcal,
+      f: after(/total\s*fat|\bfat\b|\btaba\b/, /saturat|trans|mono|poly|from fat/, grams),
+      c: after(/carbohydrate|carbs?\b|karbohidrat/, null, grams),
+      fib: after(/fib(?:er|re)|dietary/, null, grams),
+      p: after(/protein/, null, grams),
+      servingG: after(/serving\s*size|per\s*serving|serving/, /servings?\s*per/, u => u === 'g' || u === 'ml'),
+    };
+    // Which column comes first? "Per 100 g | Per serving" labels list the per-100 g number first on each line
+    const hdr = lines.find(l => /per\s*100\s*(?:g|ml)/.test(l));
+    if (hdr) { const i100 = hdr.search(/per\s*100/), iS = hdr.search(/serving/); v.per100 = iS < 0 || i100 < iS; }
+    else v.per100 = !v.servingG && /\b100\s*g\b/.test(t);
+    // A lost decimal point makes impossible numbers (2.4 g fiber read as 244): put it back
+    const cap = v.per100 ? 100 : (v.servingG || 100);
+    ['p', 'c', 'f', 'fib'].forEach(k => { while (v[k] != null && v[k] > cap && v[k] >= 10) v[k] = +(v[k] / 10).toFixed(1); });
+    if (v.fib != null && v.c != null) while (v.fib > v.c && v.fib >= 10) v.fib = +(v.fib / 10).toFixed(1);
+    v.found = ['kcal', 'p', 'c', 'f', 'fib'].filter(k => v[k] != null).length;
+    return v;
+  }
+  // A food you saved from a label before, with the same numbers per 100 g
+  function savedLabelMatch(per) {
+    const close = (a, b, tol) => Math.abs(a - b) <= Math.max(tol, Math.abs(b) * 0.05);
+    return custom.find(c => c.fromLabel && close(c.kcal, per.kcal, 3) && close(c.p, per.p, 0.6) && close(c.c, per.c, 0.6) && close(c.f, per.f, 0.6));
+  }
+  function openLabelCheck(v, raw) {
+    const val = k => v[k] == null ? '' : v[k];
+    const sub = v.found ? `Read ${v.found} of 5 numbers. Check them against the label and fix anything that’s off.` : 'Couldn’t read the numbers from that photo. Type them from the label, or try another photo.';
+    openSheet(`${sheetHead('Check the label', sub)}
+      <div id="lbMatch"></div>
+      <form id="lbForm" novalidate>
+        <label class="field">Name<span class="hint">So you can find it again, e.g. “Oishi prawn crackers”</span><input class="input" name="name" placeholder="Food name"></label>
+        <div class="form-grid" style="margin-top:12px">
+          <label class="field">Numbers are per<select class="select" name="basis"><option value="serving"${v.per100 ? '' : ' selected'}>1 serving</option><option value="100"${v.per100 ? ' selected' : ''}>100 g</option></select></label>
+          <label class="field">Serving size (g)<input class="input" name="sg" type="number" inputmode="decimal" min="0" step="any" value="${val('servingG')}" placeholder="e.g. 30"></label>
+        </div>
+        <div class="form-grid" style="margin-top:12px">
+          <label class="field">Calories<input class="input" name="kcal" type="number" inputmode="decimal" min="0" step="any" value="${val('kcal')}"></label>
+          ${MACROS.map(x => `<label class="field qa-${x.cls}"><span><i class="dot-${x.cls}"></i> ${x.label} (g)</span><input class="input" name="${x.k}" type="number" inputmode="decimal" min="0" step="any" value="${val(x.k)}"></label>`).join('')}
+        </div>
+        <div class="note" id="lbWarn" hidden>These don’t add up to the calories. Check protein, carbs and fat against the label; one may have been misread.</div>
+        <div class="eyebrow" style="margin-top:16px">How much did you have?</div>
+        <div class="item-amount"><input class="input qty" name="qty" type="number" inputmode="decimal" min="0" step="any" value="1" aria-label="Amount">
+          <select class="select" name="unit" aria-label="Unit"><option value="serving">serving(s)</option><option value="g">grams</option></select>
+          <span class="grams" id="lbInfo"></span></div>
+        <p class="muted small" id="lbMsg" role="alert" style="min-height:1.2em"></p>
+        <div class="add-row">${mealSelect('lbMeal', defaultMeal())}</div>
+        <p class="lb-ask"><b>Save it to My Foods so it’s ready next time?</b></p>
+        <div class="lb-buttons"><button class="btn" type="button" id="lbSave">Yes, add and save</button><button class="btn outline" type="button" id="lbOnce">No, just this once</button></div>
+        ${raw.trim() ? `<details class="lb-raw"><summary>What it read</summary><pre>${esc(raw.trim())}</pre></details>` : ''}
+        <div class="row-actions"><button class="btn ghost small" type="button" id="lbAgain">Scan another photo</button></div>
+      </form>`);
+    const f = $('#lbForm'); const n = k => Math.max(0, parseFloat(f.elements[k].value) || 0);
+    // Per-100 g numbers (null when the serving weight is missing), and what you had
+    const per100 = () => {
+      const k = f.elements.basis.value === '100' ? 1 : (n('sg') ? 100 / n('sg') : null); if (k == null) return null;
+      return { kcal: n('kcal') * k, p: n('p') * k, c: n('c') * k, f: n('f') * k, fib: n('fib') * k };
+    };
+    const had = () => {
+      const qty = n('qty'), unit = f.elements.unit.value, sg = n('sg') || (f.elements.basis.value === '100' ? 100 : 0);
+      const grams = unit === 'g' ? qty : sg ? qty * sg : 0;
+      const per = per100();
+      const m = per && grams ? { kcal: per.kcal * grams / 100, p: per.p * grams / 100, c: per.c * grams / 100, f: per.f * grams / 100, fib: per.fib * grams / 100 }
+        : unit === 'serving' && f.elements.basis.value === 'serving' ? { kcal: n('kcal') * qty, p: n('p') * qty, c: n('c') * qty, f: n('f') * qty, fib: n('fib') * qty } : null;
+      return { qty, unit, grams, m };
+    };
+    const refresh = () => {
+      const h = had(); $('#lbInfo').textContent = h.m ? `= ${k0(h.m.kcal)} kcal${h.grams && h.unit !== 'g' ? ` · ${fmt(h.grams, 0)} g` : ''}` : '';
+      // Protein, carbs and fat should roughly add up to the label's calories; if not, a number was probably misread
+      const calc = n('p') * 4 + n('c') * 4 + n('f') * 9;
+      $('#lbWarn').hidden = !(n('kcal') && calc && Math.abs(calc - n('kcal')) > n('kcal') * 0.2);
+      const per = per100(), match = per && per.kcal ? savedLabelMatch(per) : null;
+      $('#lbMatch').innerHTML = match ? `<div class="on-target" style="margin:0 0 12px"><div><b>You saved this before</b><span>${esc(match.name)}</span></div>
+        <button class="btn small" type="button" id="lbUse">Use it</button></div>` : '';
+      if (match) $('#lbUse').onclick = () => { closeSheet(); openFood(match.id); };
+    };
+    f.addEventListener('input', refresh); f.addEventListener('change', refresh); refresh();
+    const meal = () => $('#lbMeal').value;
+    const done = (day, ids, kcal, name, ml) => {
+      toast(`Added ${name} to Day ${day.n} · ${ml} · ${k0(kcal)} kcal`, { label: 'Undo', run: () => undoLog(day, ids) });
+      showLogged(ids, ml);
+    };
+    $('#lbOnce').onclick = () => {
+      const h = had(); if (!h.m || !h.m.kcal && !h.m.p) { $('#lbMsg').textContent = h.grams || h.unit === 'serving' ? 'Enter the calories or macros first.' : 'Enter the serving size so it can work out your amount.'; return; }
+      const name = String(f.elements.name.value).trim() || 'Scanned label', ml = meal(), m = h.m;
+      const { added, day } = logToDay([{ food: { id: 'quick', name }, qty: h.qty, unit: h.unit, grams: h.grams, m, name,
+        amt: h.unit === 'g' ? `${fmt(h.grams, 0)} g` : `${fmt(h.qty, 2)} serving${h.qty === 1 ? '' : 's'}${h.grams ? ` · ${fmt(h.grams, 0)} g` : ''}` }], ml);
+      closeSheet(); done(day, added, m.kcal, name, ml);
+    };
+    $('#lbSave').onclick = () => {
+      const name = String(f.elements.name.value).trim();
+      if (!name) { $('#lbMsg').textContent = 'Give it a name so you can find it in My Foods.'; f.elements.name.focus(); return; }
+      const per = per100(); if (!per) { $('#lbMsg').textContent = 'Enter the serving size (g) from the label so it can be saved.'; f.elements.sg.focus(); return; }
+      if (!per.kcal && !per.p && !per.c && !per.f) { $('#lbMsg').textContent = 'Enter the calories or macros first.'; return; }
+      const h = had(); if (!h.grams) { $('#lbMsg').textContent = 'Enter how much you had.'; return; }
+      const sg = n('sg');
+      const row = { id: 'my-' + uid(), name, aliases: [], kcal: +per.kcal.toFixed(1), p: +per.p.toFixed(2), c: +per.c.toFixed(2), f: +per.f.toFixed(2), fib: +per.fib.toFixed(2),
+        units: sg ? { serving: sg } : {}, d: sg ? 'serving' : 'g', fromLabel: true };
+      custom.push(row); saveCustom();
+      const food = E.byId(row.id);
+      const ml = meal(), { added, kc, day } = logToDay([{ food, qty: h.unit === 'g' ? h.grams : h.qty, unit: h.unit === 'g' ? 'g' : 'serving', grams: h.grams }], ml);
+      closeSheet(); done(day, added, kc, name, ml);
+    };
+    $('#lbAgain').onclick = () => openLabelScan();
   }
 
   // ---------- Recipe builder (your own sauces, marinades, dishes) ----------
@@ -1683,7 +1862,7 @@ window.MacrosApp = { start(ctx) {
     { go: '#day', page: 'day', sel: '#waterDash', t: 'Drink water', b: 'Tap the glass after every glass of water. It fills up toward your daily goal.' },
     { go: '#day', page: 'day', sel: '#dayBody [data-act="newday"]', t: 'Start a new day', b: 'When your day ends, tap <b>Start Day</b>. Days never change by themselves at midnight.' },
     { go: '#add', sel: '#askBox', t: 'Type or say what you ate', b: '<i>“2 eggs and 1 cup rice”</i>, <i>“150 g chicken breast”</i>, or by calories: <i>“300 kcal nuggets”</i>. Tap the mic to speak instead.' },
-    { go: '#add', sel: '#fabBtn', t: 'Scan or quick add', b: 'Tap the round button above the bar. <b>Scan barcode</b> on packaged food from the grocery or 7-Eleven, or <b>Quick add</b> to type calories and macros yourself.' },
+    { go: '#add', sel: '#fabBtn', t: 'Scan or quick add', b: 'Tap the round button above the bar. <b>Scan barcode</b> on packaged food from the grocery or 7-Eleven, <b>Scan label</b> to read the Nutrition Facts from a photo, or <b>Quick add</b> to type calories and macros yourself.' },
     { go: '#add', sel: '#cats', t: 'Browse foods', b: 'Tap <b>Protein</b>, <b>Carbs</b>, <b>Fat</b> or <b>Fiber</b> to see the best sources, or open a category below. Foods marked <b>Estimate</b> are recipe estimates.' },
     { go: '#menu', sel: '#menuBody .menu-list', t: 'The Menu', b: '<b>Goals</b> for your targets and phases, <b>Progress</b> for your results, <b>Tutorial</b> for this tour and your checklist, and <b>Settings</b>.' },
     { go: '#goals', sel: '#maintVal', t: 'Maintenance calories', b: 'What you burn in a normal day. Type your own number any time; your phases are built on it.' },

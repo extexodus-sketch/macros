@@ -652,3 +652,17 @@ a { color: var(--accent); }
 /* Room for the centre button: the toast and page content sit above it */
 .toast { bottom: calc(146px + env(safe-area-inset-bottom)); }
 .app { padding-bottom: calc(150px + env(safe-area-inset-bottom)); }
+
+/* Three bubbles: Scan barcode · Scan label · Quick add */
+.fab-menu { gap: 10px; }
+.fab-bubble { width: 98px; }
+@media (max-width: 340px) { .fab-menu { gap: 6px; } .fab-bubble { width: 90px; font-size: .8rem; } }
+
+/* Scan label */
+.label-pick { position: relative; margin-top: 4px; }
+.label-pick.busy { opacity: .6; pointer-events: none; }
+.lb-ask { margin: 14px 0 8px; font-size: .95rem; }
+.lb-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.lb-raw { margin-top: 14px; font-size: .82rem; color: var(--muted); }
+.lb-raw summary { cursor: pointer; font-weight: 600; }
+.lb-raw pre { white-space: pre-wrap; background: var(--surface-2); border-radius: 10px; padding: 10px; margin: 8px 0 0; max-height: 220px; overflow: auto; font-size: .78rem; }
