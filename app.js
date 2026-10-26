@@ -509,7 +509,10 @@ window.MacrosApp = { start(ctx) {
     const stale = isCur && entries.length && dayStart(day.start) < dayStart(Date.now()) && new Date().getHours() >= 4 && settings.nudgeSkip !== day.id;
     if (stale) html = `<div class="card nudge-card"><div><b>New day?</b><span>Day ${day.n} started ${shortDate(day.start)}. Start Day ${day.n + 1} when you’re ready.</span></div>
       <div class="row-actions" style="margin-top:10px"><button class="btn small" type="button" data-act="newday">Start Day ${day.n + 1}</button><button class="btn ghost small" type="button" data-act="nudgeskip">Not yet</button></div></div>` + html;
-    if (isCur && settings.setupDone && !(settings.tour && settings.tour.hide)) html = `<div class="card tour-card"><div><b>New here?</b><span>Take the 2-minute tour of everything maCros can do.</span></div>
+    const MI = window.MacrosInstall, installCard = isCur && MI && MI.needed() && !settings.installHide;
+    if (installCard) html = `<div class="card tour-card"><div><b>Add maCros to your Home Screen</b><span>It opens full screen like an app, one tap away.</span></div>
+      <div class="row-actions" style="margin-top:10px"><button class="btn small" type="button" data-act="install">Show me how</button><button class="btn ghost small" type="button" data-act="installhide">Not now</button></div></div>` + html;
+    else if (isCur && settings.setupDone && !(settings.tour && settings.tour.hide)) html = `<div class="card tour-card"><div><b>New here?</b><span>Take the 2-minute tour of everything maCros can do.</span></div>
       <div class="row-actions" style="margin-top:10px"><button class="btn small" type="button" data-act="tour">Start the tour</button><button class="btn ghost small" type="button" data-act="tourhide">Not now</button></div></div>` + html;
     if (isCur && weighDue().due) html = `<a class="due-banner" href="#progress"><span><b>Weigh-in time</b> · log your weight to keep your estimate on track</span><span aria-hidden="true">&#8250;</span></a>` + html;
 
@@ -558,6 +561,8 @@ window.MacrosApp = { start(ctx) {
     if (b.dataset.act === 'note') openNote(day, b.dataset.meal);
     if (b.dataset.act === 'tour') openTour(0);
     if (b.dataset.act === 'tourhide') { settings.tour = Object.assign({}, settings.tour, { hide: true }); saveSettings(); renderDay(); toast('You can find the tour in Menu → Tutorial'); }
+    if (b.dataset.act === 'install') openInstall();
+    if (b.dataset.act === 'installhide') { settings.installHide = true; saveSettings(); renderDay(); toast('You can find the steps in Menu → Add to Home Screen'); }
     if (b.dataset.act === 'addmeal') { pendingMeal = b.dataset.meal; location.hash = '#add'; setTimeout(() => q.focus(), 60); }
     if (b.dataset.act === 'nudgeskip') { settings.nudgeSkip = day.id; saveSettings(); renderDay(); }
     if (b.dataset.act === 'ontarget') setOnTarget(day, !day.onTarget);
@@ -680,6 +685,12 @@ window.MacrosApp = { start(ctx) {
     const first = s.querySelector('input, select, button'); if (first) setTimeout(() => first.focus(), 30);
     s.querySelector('[data-close]').onclick = closeSheet;
     return s;
+  }
+  async function openInstall() {
+    const MI = window.MacrosInstall;
+    if (MI.canPrompt() && await MI.prompt()) { settings.installHide = true; saveSettings(); renderDay(); return toast('Added. Open maCros from your home screen.'); }
+    const note = MI.note();
+    openSheet(`${sheetHead('Add to Home Screen', 'Open maCros like an app')}${MI.steps()}${note ? `<p class="muted small" style="margin:14px 0 0">${note}</p>` : ''}`);
   }
   function closeSheet() { $('#sheet').hidden = true; $('#sheetBackdrop').hidden = true; document.body.style.overflow = ''; if (lastFocus) lastFocus.focus(); }
   $('#sheetBackdrop').addEventListener('click', closeSheet);
@@ -1466,7 +1477,28 @@ window.MacrosApp = { start(ctx) {
       ${row('#progress', 'Progress', `Logged ${st.loggedDays} of the last ${st.span} day${st.span === 1 ? '' : 's'}`, due.due ? '<span class="pill-due">Weigh-in due</span>' : '')}
       ${row('#tutorial', 'Tutorial', `How to use maCros · ${tourProgress().done} of ${tourProgress().total} steps done`)}
       ${row('#settings', 'Settings', 'Account, appearance, water goal, backup')}
+      ${row(esc(feedbackLink()), 'Send feedback', 'Found a bug or have an idea? Email it to us')}
+      ${window.MacrosInstall && window.MacrosInstall.needed() ? `<button class="menu-row" type="button" id="installRow"><span><b>Add to Home Screen</b><small>Open maCros like an app</small></span>${ROW_ARROW}</button>` : ''}
     </div>`;
+    if ($('#installRow')) $('#installRow').onclick = openInstall;
+  }
+
+  // mailto with the phone and app version filled in, so bug reports say where they happened
+  function feedbackLink() {
+    const latest = (window.MACROS_UPDATES || [])[0];
+    const mode = window.MacrosInstall && window.MacrosInstall.needed() ? 'browser' : 'home-screen app';
+    const body = `What happened, or what's your idea?
+
+
+
+Steps to see it again (if it's a bug):
+
+
+---
+Phone / browser: ${navigator.userAgent}
+Opened from: ${mode}
+maCros version: ${latest ? latest.at : '?'}`;
+    return `mailto:extexodus@gmail.com?subject=${encodeURIComponent('maCros feedback')}&body=${encodeURIComponent(body)}`;
   }
 
   function renderGoals() {

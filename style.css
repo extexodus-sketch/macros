@@ -330,6 +330,14 @@ a { color: var(--accent); }
 .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .consent { display: flex; gap: 10px; align-items: flex-start; font-size: .9rem; line-height: 1.4; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
 .consent input { width: 20px; height: 20px; margin: 1px 0 0; flex: none; accent-color: var(--accent); }
+.install-hint { background: var(--accent-soft); border: 1.5px solid var(--accent-bright); border-radius: 14px; padding: 12px 14px; font-size: .92rem; }
+.install-hint summary { cursor: pointer; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.install-hint summary::-webkit-details-marker { display: none; }
+.install-hint summary span { color: var(--muted); font-size: .85rem; }
+.install-hint .more { font-style: normal; font-weight: 600; color: var(--accent); }
+.install-hint[open] summary { margin-bottom: 12px; }
+.install-hint[open] .more { display: none; }
+.install-hint .steps b.n { background: var(--surface); }
 .gate-msg { min-height: 1.3em; margin: 0; font-size: .9rem; color: var(--danger); text-align: center; }
 .linkish { background: none; border: 0; color: var(--accent); font-weight: 600; padding: 10px 0 0; width: 100%; }
 .legal-overlay { position: fixed; inset: 0; background: rgba(5, 12, 10, .5); z-index: 80; display: flex; align-items: flex-end; justify-content: center; }
@@ -402,6 +410,7 @@ a { color: var(--accent); }
 /* ---------- Menu ---------- */
 .menu-list { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
 .menu-row { display: flex; align-items: center; gap: 10px; padding: 16px; color: var(--text); text-decoration: none; border-top: 1px solid var(--line); }
+button.menu-row { width: 100%; background: none; border: 0; border-top: 1px solid var(--line); font: inherit; text-align: left; cursor: pointer; }
 .menu-row:first-child { border-top: 0; }
 .menu-row:hover { background: var(--surface-2); }
 .menu-row > span:first-child { flex: 1; min-width: 0; display: flex; flex-direction: column; }

@@ -98,7 +98,7 @@ async function startCloud(config) {
   function renderAuth() {
     let mode = 'signup';
     const draw = () => {
-      showGate(`<div class="gate-card">${brand}
+      showGate(`<div class="gate-card">${brand}${installHint()}
         <div class="seg two" role="tablist">
           <button type="button" data-mode="signup" class="${mode === 'signup' ? 'on' : ''}">Create account</button>
           <button type="button" data-mode="login" class="${mode === 'login' ? 'on' : ''}">Log in</button></div>
@@ -113,6 +113,7 @@ async function startCloud(config) {
           ${mode === 'login' ? '<button class="linkish" type="button" id="aForgot">Forgot password?</button>' : ''}
         </form>
         <p class="gate-msg" id="aMsg" role="alert"></p></div>`);
+      if ($('#gInstall')) $('#gInstall').onclick = () => window.MacrosInstall.prompt();
       gate.querySelectorAll('[data-mode]').forEach(b => { b.onclick = () => { mode = b.dataset.mode; draw(); }; });
       const msg = t => { $('#aMsg').textContent = t; };
       const agreed = () => { if ($('#aAgree').checked) return true; msg('Please tick the box to confirm you’re 18+ and agree to the Terms and Privacy Policy.'); return false; };
@@ -140,6 +141,14 @@ async function startCloud(config) {
     };
     draw();
   }
+}
+
+// On a phone's browser: suggest adding maCros to the home screen before signing in (iPhone keeps a separate sign-in there)
+function installHint() {
+  const MI = window.MacrosInstall;
+  if (!MI || !MI.needed()) return '';
+  return `<details class="install-hint"><summary><b>On your phone? Add maCros to your Home Screen first</b><span>Then open it from the icon and sign in there. <em class="more">Show me how ›</em></span></summary>
+    ${MI.canPrompt() ? '<button class="btn wide" id="gInstall" type="button">Install maCros</button><p class="muted small" style="margin:10px 0">Or do it yourself:</p>' : ''}${MI.steps()}</details>`;
 }
 
 async function enterAccount(cloud, user, consentedNow) {

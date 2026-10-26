@@ -4,6 +4,11 @@
  * kind: feature (big) · improvement (smaller change) · fix
  */
 window.MACROS_UPDATES = [
+  { at: '2026-10-26 12:01', kind: 'improvement', title: 'Send feedback',
+    body: 'Found a bug or have an idea? Menu → Send feedback opens an email to us with your phone type already filled in.' },
+  { at: '2026-10-26 12:00', kind: 'improvement', title: 'Add to Home Screen help',
+    body: 'Opened maCros in your phone’s browser? A short card shows how to add it to your Home Screen, so it opens full screen like an app. The steps are also in Menu.' },
+
   { at: '2026-10-22 11:00', kind: 'feature', title: 'Scan label',
     body: 'Tap the round button, then Scan label, and take a photo of the Nutrition Facts. maCros reads the calories, protein, carbs, fat, fiber and serving size for you to check, then asks if you want to save it to My Foods. Scan a saved label again and it shows “You saved this before” for a one-tap add. The photo is read on your phone and never uploaded.' },
 

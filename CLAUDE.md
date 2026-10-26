@@ -32,6 +32,7 @@ Project notes for Claude Code (and humans). Read this first when picking up the 
 - Unknown foods are added by the user (custom food / recipe builder). No AI or API lookups, so no token costs. **One approved exception (2026-10-16): barcode lookups** on Open Food Facts (free, sends only the barcode number; disclosed in privacy.html).
 - **Barcode scanner** (Add → Scan barcode): camera via the built-in BarcodeDetector (Android Chrome) or the ZXing library from jsDelivr (`@zxing/library@0.21.3`, loaded only when scanning). Order: your saved products (`custom[].barcode`) → Open Food Facts → "type the label once". Scanned products are saved as your own foods, so the next scan is instant and offline. Typing the number works when the camera can't.
 - **Quick add** (Add → Quick add): type calories and macros yourself; logged as an entry with `fid: 'quick'` (calories auto = P×4 + C×4 + F×9 unless typed).
+- **Testers / feedback:** share https://extexodus-sketch.github.io/macros/ (sign in with Google or email; no Claude involved). Menu → Send feedback opens an email to extexodus@gmail.com with the phone, browser-vs-home-screen and app version filled in.
 - **Accounts (in progress):** Firebase Auth (Google + email/password) + Firestore. 18+ only. Terms & Privacy list "maCros" as operator, with contact extexodus@gmail.com. The Firestore region must be **asia-southeast1 (Singapore)** because privacy.html says so.
 
 ## Files
@@ -43,6 +44,7 @@ Project notes for Claude Code (and humans). Read this first when picking up the 
 | `app.js` | UI: Identify, My Day, Foods (Database / Suggestions / My Eats), Settings. `MacrosApp.start(ctx)` |
 | `setup.js` | First-run setup wizard, target maths and phase types (`MacrosSetup.open / plan / summary / rules / PHASES`) |
 | `engine.js` | Parser (English/Tagalog, spoken numbers, units, 90%/80-20), fuzzy search, macro math |
+| `install.js` | "Add to Home Screen" help (`MacrosInstall`): hint on the sign-in screen and a Dashboard card (`settings.installHide`) when opened in a phone's browser; Menu row while not installed |
 | `updates.js` | What's new timeline shown in the bell (add an entry for every change) |
 | `foods.js` / `suggestions.js` | Food data, per 100 g. Rows carry reference IDs (FDC / FNRI codes) |
 | `firebase-config.js` | Paste the Firebase web config here (`null` = local-only mode) |
