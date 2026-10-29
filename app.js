@@ -119,7 +119,7 @@ window.MacrosApp = { start(ctx) {
       day: `<ul class="legend-list"><li>Days only change when you tap <b>Start Day ${curDay().n + 1}</b>, never at midnight.</li>
           <li>Tap <b>Eaten / Left</b> (or the ring) to see what you’ve had or what’s left for calories, protein, carbs, fat and fiber. The calories at the top right on other pages follow the same choice.</li>
           <li>You can go back to past days with the arrows and still edit them.</li>
-          <li>Tap <b>+</b> next to a meal to add food straight to it.</li>
+          <li>Tap <b>+</b> next to a meal to add food straight to it. Tap a food you logged to change its amount or move it to another meal.</li>
           <li>Holiday or family gathering? Tap <b>&#8943;</b> → <b>Count this day as on target</b>. The day counts as exactly your targets.</li>
           <li>Your targets come from your setup and current phase. Change them in Menu → Goals.</li>
           <li>Tap the note icon next to a meal to write down how it went.</li>
@@ -127,7 +127,7 @@ window.MacrosApp = { start(ctx) {
       add: `<ol class="steps">
           <li><b class="n">1</b><div><b>Type or tap the mic</b> and say what you ate, with amounts: <span class="muted">“150 grams lean ground pork and one cup of rice”</span>, or by calories: <span class="muted">“532 calories of chicken nuggets”</span>. English, Tagalog or Taglish all work.</div></li>
           <li><b class="n">2</b><div><b>Check the matches.</b> Fix any amount, switch between cooked and raw, or pick a different food. No amount? It assumes 1 normal serving and tells you.</div></li>
-          <li><b class="n">3</b><div><b>Scan a barcode</b> on packaged food, or use <b>Quick add</b> to type calories and macros yourself.</div></li>
+          <li><b class="n">3</b><div>The round button above the bar has <b>Quick add</b>, <b>Scan</b> (barcode or Nutrition Facts label) and <b>Voice</b>. By voice you can also say <span class="muted">“one glass of water”</span> or your weight, <span class="muted">“132 pounds today”</span>.</div></li>
           <li><b class="n">4</b><div><b>Add to your day</b> for a running total. Made your own sauce? Type its ingredients and tap <b>Save as recipe</b>.</div></li>
         </ol>
         <p class="muted small" style="margin:14px 0 0">Weights are <b>cooked, as eaten</b> unless you pick raw. Calculations use only USDA, FNRI and label values (${verified} foods). Recipe estimates are marked <b>Estimate</b> and are only used when you pick one.</p>
@@ -150,7 +150,7 @@ window.MacrosApp = { start(ctx) {
     const day = curDay(); const added = []; let kc = 0;
     for (const it of list) {
       const m = it.m || E.macros(it.food, it.grams); kc += m.kcal;
-      const e = { id: uid(), fid: it.food.id, name: it.name || it.food.name, amt: it.amt || amtLabel(it.food, it.qty, it.unit, it.grams), grams: r1(it.grams), meal, t: Date.now(),
+      const e = { id: uid(), fid: it.food.id, name: it.name || it.food.name, amt: it.amt || amtLabel(it.food, it.qty, it.unit, it.grams), grams: r1(it.grams), qty: it.qty, unit: it.unit, meal, t: Date.now(),
         est: !!it.food.sugg, kcal: r1(m.kcal), p: r1(m.p), c: r1(m.c), f: r1(m.f), fib: r1(m.fib) };
       day.entries.push(e); added.push(e.id);
       recent = [it.food.id, ...recent.filter(x => x !== it.food.id)].slice(0, 12);
@@ -168,7 +168,7 @@ window.MacrosApp = { start(ctx) {
     let tab = location.hash.slice(1); tab = OLD_TABS[tab] || tab;
     if (!TABS.includes(tab)) tab = 'day';
     TABS.forEach(t => { $('#view-' + t).hidden = t !== tab; });
-    const navTab = ['goals', 'progress', 'tutorial', 'settings'].includes(tab) ? 'menu' : tab;
+    const navTab = ['tutorial', 'settings'].includes(tab) ? 'menu' : tab;   // Goals and Progress have their own tabs
     $('#todayPill').style.visibility = tab === 'day' ? 'hidden' : '';
     $$('.tabbar a').forEach(a => a.classList.toggle('on', a.dataset.tab === navTab));
     if (tab === 'day') { viewIdx = days.length - 1; showDash(dashPage); }
@@ -179,7 +179,7 @@ window.MacrosApp = { start(ctx) {
     if (tab === 'progress') renderProgress();
     if (tab === 'settings') renderSettings();
     window.scrollTo(0, 0);
-    if (tab === 'day' && flashNext) { const f = flashNext; flashNext = null; requestAnimationFrame(() => flashLogged(f)); }
+    if (flashNext && flashNext.tab === tab) { const f = flashNext; flashNext = null; requestAnimationFrame(() => flashLogged(f)); }
   }
   const viewOpen = t => !$('#view-' + t).hidden;
   window.addEventListener('hashchange', route);
@@ -414,6 +414,7 @@ window.MacrosApp = { start(ctx) {
   }
 
   function addCurrent() {
+    if (runCommand(q.value)) { q.value = ''; autosize(); identify(); return; }   // "1 glass of water", "60 kg"
     const foods = items.filter(i => i.kind === 'food');
     if (!foods.length) return toast('Nothing to add yet.');
     const meal = $('#mealSel') ? $('#mealSel').value : defaultMeal();
@@ -425,33 +426,36 @@ window.MacrosApp = { start(ctx) {
   }
   // After any add: open the Dashboard and highlight the meal and foods that just went in
   function showLogged(ids, meal) {
-    flashNext = { ids, meal }; dashPage = 'day';
+    flashNext = { ids, meal, tab: 'day' }; dashPage = 'day';
     if (!viewOpen('day')) { location.hash = '#day'; return; }   // route() renders, then flashes
     viewIdx = days.length - 1; showDash('day'); const f = flashNext; flashNext = null; requestAnimationFrame(() => flashLogged(f));
   }
-  function flashLogged({ ids, meal }) {
-    const head = $$('#dayBody .meal-head').find(h => h.querySelector('h2').textContent === meal);
-    const els = ids.map(id => $(`#dayBody .entry[data-id="${CSS.escape(id)}"]`)).filter(Boolean);
+  function flashLogged({ ids, meal, sel }) {
+    const head = meal ? $$('#dayBody .meal-head').find(h => h.querySelector('h2').textContent === meal) : (sel ? $(sel) : null);
+    const els = (ids || []).map(id => $(`#dayBody .entry[data-id="${CSS.escape(id)}"]`)).filter(Boolean);
     const target = els[0] || head; if (!target) return;
     target.scrollIntoView({ block: 'center', behavior: 'smooth' });
     [head, ...els].filter(Boolean).forEach(el => { el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 2600); });
   }
 
   // ---------- Voice ----------
+  // Say foods ("2 eggs and a cup of rice"), water ("one glass of water") or your weight ("132 pounds today")
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null;
   const mic = $('#mic'), vs = $('#voiceStatus');
   if (!SR) mic.title = 'Voice input needs Chrome, Edge or Safari';
-  mic.addEventListener('click', () => {
+  mic.addEventListener('click', () => startVoice());
+  function startVoice() {
     if (!SR) { vs.textContent = 'Voice isn’t supported in this browser. Use Chrome, Edge or Safari, or your keyboard’s mic button.'; return; }
     if (listening) { rec.stop(); return; }
     rec = new SR();
     rec.lang = settings.voiceLang || 'en-PH'; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
     const base = q.value.trim() ? q.value.trim() + ', ' : '';
-    rec.onstart = () => { listening = true; mic.classList.add('listening'); vs.classList.add('on'); vs.textContent = 'Listening… say what you ate, then pause.'; };
+    let heard = '';
+    rec.onstart = () => { listening = true; mic.classList.add('listening'); vs.classList.add('on'); vs.textContent = 'Listening… say what you ate, a glass of water, or your weight.'; };
     rec.onresult = e => {
       let txt = ''; for (let i = 0; i < e.results.length; i++) txt += e.results[i][0].transcript;
-      q.value = base + txt; autosize(); identify();
+      heard = txt; q.value = base + txt; autosize(); identify();
     };
     rec.onerror = e => {
       const msg = { 'not-allowed': 'Microphone blocked. Allow mic access for this page in your browser settings.',
@@ -460,9 +464,45 @@ window.MacrosApp = { start(ctx) {
         'no-speech': 'Didn’t catch anything. Tap the mic and try again.', 'audio-capture': 'No microphone found.' }[e.error];
       vs.textContent = msg || 'Voice stopped: ' + e.error;
     };
-    rec.onend = () => { listening = false; mic.classList.remove('listening'); vs.classList.remove('on'); if (vs.textContent.startsWith('Listening')) vs.textContent = ''; };
+    rec.onend = () => {
+      listening = false; mic.classList.remove('listening'); vs.classList.remove('on'); if (vs.textContent.startsWith('Listening')) vs.textContent = '';
+      // Water or a weigh-in instead of food: do it, and put the box back the way it was
+      if (heard && runCommand(heard)) { q.value = base.replace(/,\s*$/, ''); autosize(); identify(); }
+    };
     try { rec.start(); } catch (err) { vs.textContent = 'Could not start voice input.'; }
-  });
+  }
+
+  // Things you can say (or type) besides food. Returns { water: n } or { kg }, or null for food.
+  const CMD_NUM = { a: 1, an: 1, one: 1, isa: 1, isang: 1, two: 2, dalawa: 2, dalawang: 2, three: 3, tatlo: 3, tatlong: 3, four: 4, apat: 4, na: 1 };
+  function voiceCommand(text) {
+    const t = ' ' + String(text).toLowerCase().replace(/[,!?]/g, ' ').replace(/\.(?!\d)/g, ' ').replace(/\s+/g, ' ').trim() + ' ';
+    let m = t.match(/ (\d+|a|an|one|two|three|four|isa|isang|dalawa|dalawang|tatlo|tatlong|apat)?\s*(?:glass|glasses|baso|basong|cup|cups|bottle|bottles)\s+(?:of\s+|ng\s+)?(?:water|tubig) /);
+    if (m) return { water: m[1] ? (CMD_NUM[m[1]] || parseInt(m[1], 10) || 1) : 1 };
+    if (/ (?:drank|drink|had|log|track|add)\s+(?:some\s+|a\s+)?water | uminom (?:ako )?ng tubig /.test(t) || /^ (?:water|tubig) $/.test(t)) return { water: 1 };
+    // "132 pounds today", "£132", "my weight is 60 kg", "weigh in 61.5", "timbang ko 60 kilos"
+    const FILL = /\b(?:today|now|this|morning|ngayon|my|i|i'm|im|am|is|weigh|weight|weighed|weighing|in|ko|timbang|scale|says|log|track|record|current|currently|at|of)\b/g;
+    const core = t.replace(/£\s*(\d+(?:\.\d+)?)/, '$1 lb').replace(/-/g, ' ').replace(FILL, ' ').replace(/\s+/g, ' ').trim();
+    m = core.match(/^(\d+(?:\.\d+)?)\s*(kg|kgs|kilo|kilos|kilogram|kilograms|lb|lbs|pound|pounds)?$/);
+    if (m && (m[2] || /weigh|weight|timbang|scale/.test(t))) {
+      const v = parseFloat(m[1]), lb = m[2] ? /^(?:lb|lbs|pound|pounds)$/.test(m[2]) : wUnit() === 'lb';
+      const kg = lb ? v * LB : v;
+      if (kg >= 25 && kg <= 350) return { kg };
+    }
+    return null;
+  }
+  function runCommand(text) {
+    const c = voiceCommand(text); if (!c) return false;
+    if (c.water) {
+      const d = curDay(), before = d.water || 0; d.water = before + c.water; saveDays(); renderWater();
+      toast(`Logged ${c.water} glass${c.water === 1 ? '' : 'es'} of water`, { label: 'Undo', run: () => { d.water = before; saveDays(); renderWater(); if (viewOpen('day')) renderDay(); } });
+      dashPage = 'day'; goTo('#day', { tab: 'day', sel: '#waterDash' });
+    } else {
+      logWeight(c.kg); goTo('#progress', { tab: 'progress', sel: '#progressBody .stat-grid' });
+    }
+    return true;
+  }
+  // Open a page, then highlight something on it
+  function goTo(hash, flash) { flashNext = flash || null; if (location.hash === hash) route(); else location.hash = hash; }
 
   // ==========================================================
   // MY DAY (manual days)
@@ -528,7 +568,7 @@ window.MacrosApp = { start(ctx) {
           ${!list.length && isCur ? `<button class="meal-empty" type="button" data-act="addmeal" data-meal="${meal}">+ Add ${meal.toLowerCase()}</button>` : ''}
           ${notes[meal] ? `<button class="meal-note" type="button" data-act="note" data-meal="${meal}">${esc(notes[meal])}</button>` : ''}
           ${list.length ? `<div class="card">${list.map(e => `<div class="entry" data-id="${esc(e.id)}">
-            <div class="e-main"><div class="e-name">${esc(e.name)}${e.est ? ' <span class="badge E">Estimate</span>' : ''}</div><div class="e-sub">${esc(e.amt)}</div>${mchips(e, false)}</div>
+            <div class="e-main" data-act="edit" role="button" tabindex="0" aria-label="Edit ${esc(e.name)}"><div class="e-name">${esc(e.name)}${e.est ? ' <span class="badge E">Estimate</span>' : ''}</div><div class="e-sub">${esc(e.amt)}</div>${mchips(e, false)}</div>
             <div class="e-kcal">${k0(e.kcal)}</div>
             <button class="remove" type="button" data-act="del" aria-label="Delete ${esc(e.name)}">&times;</button></div>`).join('')}</div>` : ''}`;
       }
@@ -543,6 +583,7 @@ window.MacrosApp = { start(ctx) {
   $('#dayBody').addEventListener('click', e => {
     const b = e.target.closest('[data-act]'); if (!b) return;
     const day = days[viewIdx];
+    if (b.dataset.act === 'edit') return openEntry(day, b.closest('[data-id]').dataset.id);
     if (b.dataset.act === 'del') {
       const id = b.closest('[data-id]').dataset.id;
       const idx = day.entries.findIndex(x => x.id === id); if (idx < 0) return;
@@ -570,11 +611,94 @@ window.MacrosApp = { start(ctx) {
       openSheet(`${sheetHead('More options', `Day ${day.n}`)}<div class="action-list">
         <button type="button" class="action-row" id="onTargetBtn">${day.onTarget ? '<b>Use my real numbers</b><span>Go back to the totals of what you logged</span>'
           : '<b>Count this day as on target</b><span>Holiday or family gathering? The day counts as exactly your targets, so you aren’t punished for not counting.</span>'}</button>
-        ${day.entries.length ? '<button type="button" class="action-row" id="copyDayBtn"><b>Copy day summary</b><span>Paste it into a chat or your notes</span></button>' : ''}</div>`);
+        ${day.entries.length ? '<button type="button" class="action-row" id="copyDayBtn"><b>Copy day summary</b><span>Paste it into a chat or your notes</span></button>' : ''}
+        <button type="button" class="action-row" id="clearDayBtn"><b>Clear this day</b><span>Remove its foods, water and notes and start this Day fresh</span></button></div>`);
+      $('#clearDayBtn').onclick = () => { closeSheet(); clearDay(day); };
       $('#onTargetBtn').onclick = () => { closeSheet(); setOnTarget(day, !day.onTarget); };
       if (day.entries.length) $('#copyDayBtn').onclick = () => { closeSheet(); copyDay(day); };
     }
   });
+  // Edit a logged food: change the amount or the meal. Plain foods recalculate from the food;
+  // quick adds, one-off labels and adjusted dishes scale what you logged or take typed numbers.
+  function openEntry(day, id) {
+    const e = day.entries.find(x => x.id === id); if (!e) return;
+    const food = !e.quick && e.fid !== 'quick' ? E.byId(e.fid) : null;
+    const byFood = !!(food && !food.parts && e.name === food.name);
+    const before = { ...e };
+    const unit0 = byFood && e.unit && (e.unit === 'g' || e.unit === 'kcal' || food.units[e.unit]) ? e.unit : 'g';
+    const qty0 = byFood && unit0 !== 'g' && e.qty ? e.qty : Math.round(e.grams || 0);
+    openSheet(`${sheetHead('Edit ' + esc(e.name), byFood ? 'Change how much you had, or move it to another meal.' : 'Change the amount or the numbers, or move it to another meal.')}
+      <form id="enForm" novalidate>
+        ${byFood ? `<div class="item-amount"><input class="input qty" name="qty" type="number" inputmode="decimal" min="0" step="any" value="${r1(qty0)}" aria-label="Amount">
+          <select class="select" name="unit" aria-label="Unit">${unitOptions(food, unit0)}</select><span class="grams" id="enGrams"></span></div>`
+        : `<label class="field">Name<input class="input" name="name" value="${esc(e.name)}"></label>
+          <label class="field" style="margin-top:12px">How much<span class="hint">× what you logged (${esc(e.amt || '')}). 0.5 = half, 2 = double</span>
+            <input class="input" name="mult" type="number" inputmode="decimal" min="0" step="any" value="1"></label>
+          <div class="form-grid" style="margin-top:12px">
+            <label class="field">Calories<input class="input" name="kcal" type="number" inputmode="decimal" min="0" step="any" value="${r1(e.kcal)}"></label>
+            ${MACROS.map(x => `<label class="field qa-${x.cls}"><span><i class="dot-${x.cls}"></i> ${x.label} (g)</span><input class="input" name="${x.k}" type="number" inputmode="decimal" min="0" step="any" value="${r1(e[x.k] || 0)}"></label>`).join('')}
+          </div>`}
+        <div style="margin-top:14px"><div class="kcal-big" id="enKcal"></div><div id="enTiles"></div></div>
+        <div class="add-row">${mealSelect('enMeal', e.meal)}<button class="btn grow" type="submit">Save</button></div>
+        <div class="row-actions"><button class="btn danger small" type="button" id="enDel">Delete</button></div>
+      </form>`);
+    const f = $('#enForm'); const n = k => Math.max(0, parseFloat(f.elements[k].value) || 0);
+    let lastMult = 1;
+    const calc = () => {
+      let m;
+      if (byFood) {
+        const g = E.gramsFor(food, n('qty'), f.elements.unit.value); m = E.macros(food, g);
+        $('#enGrams').textContent = f.elements.unit.value === 'g' ? '' : '= ' + fmt(g, 0) + ' g';
+      } else m = { kcal: n('kcal'), p: n('p'), c: n('c'), f: n('f'), fib: n('fib') };
+      $('#enKcal').innerHTML = `${k0(m.kcal)}<span>kcal</span>`; $('#enTiles').innerHTML = macroTiles(m, false);
+      return m;
+    };
+    f.addEventListener('input', ev => {
+      // "How much" rescales the numbers
+      if (!byFood && ev.target.name === 'mult') {
+        const k = n('mult') / (lastMult || 1); if (n('mult') > 0) { ['kcal', 'p', 'c', 'f', 'fib'].forEach(x => { f.elements[x].value = r1(n(x) * k); }); lastMult = n('mult'); }
+      }
+      calc();
+    });
+    if (byFood) f.elements.unit.addEventListener('change', () => {
+      const u = f.elements.unit.value, g0 = E.gramsFor(food, qty0, unit0);
+      f.elements.qty.value = u === 'g' ? Math.round(g0) : u === 'kcal' ? Math.round(E.macros(food, g0).kcal) : r1(E.amount(food, null, u).qty || 1);
+      calc();
+    });
+    calc();
+    f.addEventListener('submit', ev => {
+      ev.preventDefault();
+      const m = calc(); e.meal = $('#enMeal').value;
+      if (byFood) {
+        const qty = n('qty'), unit = f.elements.unit.value, g = E.gramsFor(food, qty, unit);
+        if (!g) return toast('Enter an amount first.');
+        Object.assign(e, { qty, unit, grams: r1(g), amt: amtLabel(food, qty, unit, g) });
+      } else {
+        const name = String(f.elements.name.value).trim() || e.name, k = lastMult;
+        Object.assign(e, { name, grams: r1((before.grams || 0) * k), amt: k !== 1 && before.amt ? `${fmt(k, 2)} × ${before.amt}` : e.amt });
+      }
+      Object.assign(e, { kcal: r1(m.kcal), p: r1(m.p), c: r1(m.c), f: r1(m.f), fib: r1(m.fib) });
+      saveDays(); updatePill(); closeSheet(); renderDay();
+      toast(`Saved ${e.name}`, { label: 'Undo', run: () => { Object.keys(e).forEach(k => delete e[k]); Object.assign(e, before); saveDays(); updatePill(); renderDay(); } });
+      requestAnimationFrame(() => flashLogged({ ids: [e.id], meal: e.meal }));
+    });
+    $('#enDel').onclick = () => {
+      const idx = day.entries.indexOf(e); if (idx < 0) return;
+      day.entries.splice(idx, 1); saveDays(); updatePill(); closeSheet(); renderDay();
+      toast(`Removed ${e.name}`, { label: 'Undo', run: () => { day.entries.splice(idx, 0, e); saveDays(); updatePill(); renderDay(); } });
+    };
+  }
+  $('#dayBody').addEventListener('keydown', ev => {
+    const t = ev.target.closest('[data-act="edit"]'); if (t && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); t.click(); }
+  });
+  // Clear this day: foods, water, notes and "on target", keeping its Day number. Undo puts it all back.
+  function clearDay(day) {
+    if (!confirm(`Clear everything on Day ${day.n}? Its foods, water and notes are removed. The Day number stays.`)) return;
+    const keep = { entries: day.entries, water: day.water, notes: day.notes, onTarget: day.onTarget };
+    day.entries = []; delete day.water; delete day.notes; delete day.onTarget;
+    saveDays(); updatePill(); renderDay();
+    toast(`Day ${day.n} cleared`, { label: 'Undo', run: () => { Object.assign(day, keep); Object.keys(keep).forEach(k => { if (keep[k] === undefined) delete day[k]; }); saveDays(); updatePill(); renderDay(); } });
+  }
   function setOnTarget(day, on) {
     if (on) day.onTarget = true; else delete day.onTarget;
     saveDays(); updatePill(); renderDay();
@@ -878,17 +1002,25 @@ window.MacrosApp = { start(ctx) {
   }
 
   // ---------- Barcode: scan → your saved products → Open Food Facts → type the label once ----------
-  $('#scanBtn').addEventListener('click', () => openScanner());
+  // Scan: one circle, then pick barcode or the Nutrition Facts label
+  $('#scanAnyBtn').addEventListener('click', () => {
+    openSheet(`${sheetHead('Scan', 'What are you scanning?')}<div class="action-list">
+      <button type="button" class="action-row" id="chBarcode"><b>Barcode</b><span>The stripes on the pack. Finds the product, or remembers it after you type the label once.</span></button>
+      <button type="button" class="action-row" id="chLabel"><b>Nutrition label</b><span>Take a photo of the Nutrition Facts and it reads the numbers for you.</span></button></div>`);
+    $('#chBarcode').onclick = () => openScanner(); $('#chLabel').onclick = () => openLabelScan();
+  });
+  // Voice: open Add and start listening straight away
+  $('#voiceBtn').addEventListener('click', () => { location.hash = '#add'; startVoice(); });
 
-  // Centre button above the bottom bar: opens three bubbles, Scan barcode, Scan label and Quick add
+  // Centre button above the bottom bar: three overlapping circles, Quick add · Scan · Voice
   function setFab(open) {
     $('#fabMenu').hidden = !open; $('#fabBackdrop').hidden = !open;
     $('#fabBtn').classList.toggle('open', open); $('#fabBtn').setAttribute('aria-expanded', open);
-    $('#fabBtn').setAttribute('aria-label', open ? 'Close' : 'Scan barcode, scan label or quick add');
+    $('#fabBtn').setAttribute('aria-label', open ? 'Close' : 'Quick add, scan or voice');
   }
   $('#fabBtn').addEventListener('click', () => setFab($('#fabMenu').hidden));
   $('#fabBackdrop').addEventListener('click', () => setFab(false));
-  ['#scanBtn', '#labelBtn', '#quickBtn'].forEach(s => $(s).addEventListener('click', () => setFab(false)));
+  ['#quickBtn', '#scanAnyBtn', '#voiceBtn'].forEach(s => $(s).addEventListener('click', () => setFab(false)));
   window.addEventListener('hashchange', () => setFab(false));
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#fabMenu').hidden) setFab(false); });
   let scanStop = null;
@@ -970,7 +1102,6 @@ window.MacrosApp = { start(ctx) {
   // ---------- Scan label: photo of the Nutrition Facts → read on this phone → check → add, and save if you want ----------
   // Text is read on the device with Tesseract (free, no API, nothing uploaded). It loads from jsDelivr the first time only.
   const TESSERACT = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
-  $('#labelBtn').addEventListener('click', () => openLabelScan());
   function openLabelScan() {
     openSheet(`${sheetHead('Scan a label', 'Take a clear, straight photo of the Nutrition Facts. It’s read on your phone; the photo isn’t sent anywhere.')}
       <label class="btn wide label-pick" id="labelPick">Take or choose a photo<input type="file" id="labelFile" accept="image/*" hidden></label>
@@ -1273,6 +1404,10 @@ window.MacrosApp = { start(ctx) {
         <div class="row-actions" style="margin-top:0"><a class="btn ghost small" href="terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a><a class="btn ghost small" href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a></div>
         <p class="muted small" style="margin:10px 0 0">maCros gives estimates for information only. It isn't medical or dietary advice.</p>
       </div>
+      <div class="card settings-card"><h2>Start over</h2>
+        <p class="muted small" style="margin:0">Removes every Day you’ve logged and starts again at Day 1. Your own foods, recipes, goals and settings stay.</p>
+        <div class="row-actions"><button class="btn outline small" type="button" id="startOverBtn">Start over from Day 1</button></div>
+      </div>
       <div class="card settings-card"><h2>Danger zone</h2>
         <div class="row-actions" style="margin-top:0">${acct ? '<button class="btn danger small" type="button" id="deleteAcctBtn">Delete my account</button>' : '<button class="btn danger small" type="button" id="resetBtn">Erase all my data</button>'}</div>
       </div>`;
@@ -1280,6 +1415,12 @@ window.MacrosApp = { start(ctx) {
       $('#signOutBtn').onclick = () => { if (confirm('Sign out of maCros on this device?')) acct.signOut(); };
       $('#deleteAcctBtn').onclick = openDeleteAccount;
     }
+    $('#startOverBtn').onclick = () => {
+      const n = days.filter(d => d.entries.length || d.water).length;
+      if (!confirm(`Start over from Day 1? This removes all ${days.length} Day${days.length === 1 ? '' : 's'}${n ? ` (${n} with food or water logged)` : ''}. Your foods, recipes, goals and settings stay.`)) return;
+      const keep = days; days = [newDay(1)]; viewIdx = 0; settings.lastMeal = 'Breakfast'; saveSettings(); saveDays(); updatePill();
+      toast('Started over at Day 1', { label: 'Undo', run: () => { days = keep; viewIdx = days.length - 1; saveDays(); updatePill(); if (viewOpen('day')) renderDay(); } });
+    };
     $('#setVoice').onchange = e => { settings.voiceLang = e.target.value; saveSettings(); };
     $('#setWaterGoal').onchange = e => { const v = Math.round(+e.target.value); if (v >= 1 && v <= 30) { settings.water = Object.assign(waterCfg(), { goal: v }); saveSettings(); toast(`Water goal: ${v} glasses`); } };
     $('#setWaterMl').onchange = e => { const v = Math.round(+e.target.value); if (v >= 50 && v <= 1000) { settings.water = Object.assign(waterCfg(), { ml: v }); saveSettings(); toast(`Glass size: ${v} ml`); } };
@@ -1469,12 +1610,8 @@ window.MacrosApp = { start(ctx) {
   const ROW_ARROW = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M9.3 6.3a1 1 0 0 1 1.4 0l5 5a1 1 0 0 1 0 1.4l-5 5a1 1 0 0 1-1.4-1.4l4.3-4.3-4.3-4.3a1 1 0 0 1 0-1.4Z"/></svg>';
 
   function renderMenu() {
-    ensurePhases();
-    const ph = activePhase(), st = periodStats(7), due = weighDue();
     const row = (href, title, sub, extra) => `<a class="menu-row" href="${href}"><span><b>${title}</b><small>${sub}</small></span>${extra || ''}${ROW_ARROW}</a>`;
     $('#menuBody').innerHTML = `<div class="menu-list">
-      ${row('#goals', 'Goals', ph ? `${esc(ph.name)} · ${k0(settings.targets.kcal)} kcal · ${fmt(settings.targets.p, 0)} g protein` : 'Targets, phases and your setup')}
-      ${row('#progress', 'Progress', `Logged ${st.loggedDays} of the last ${st.span} day${st.span === 1 ? '' : 's'}`, due.due ? '<span class="pill-due">Weigh-in due</span>' : '')}
       ${row('#tutorial', 'Tutorial', `How to use maCros · ${tourProgress().done} of ${tourProgress().total} steps done`)}
       ${row('#settings', 'Settings', 'Account, appearance, water goal, backup')}
       ${row(esc(feedbackLink()), 'Send feedback', 'Found a bug or have an idea? Email it to us')}
@@ -1796,7 +1933,7 @@ maCros version: ${latest ? latest.at : '?'}`;
     el = el || $('#water'); if (!el) return;
     const d = curDay(), c = waterCfg(), n = d.water || 0;
     el.innerHTML = `<button class="glass-btn" type="button" data-water="add" aria-label="Log one glass of water (${c.ml} ml)">${glassSvg(Math.min(n / c.goal, 1), 'clip-' + el.id)}</button>
-      <div class="water-txt"><b>${n} of ${c.goal} glasses</b><small>${k0(n * c.ml)} ml water today · tap the glass after each one</small></div>
+      <div class="water-txt"><b>${n} of ${c.goal} glasses</b><small>${k0(n * c.ml)} ml today</small></div>
       ${n ? '<button class="icon-btn" type="button" data-water="undo" aria-label="Remove one glass">&minus;</button>' : ''}`;
     $('[data-water="add"]', el).onclick = () => {
       d.water = n + 1; saveDays(); renderWater(el); $('[data-water="add"]', el).classList.add('pop');
@@ -1896,7 +2033,7 @@ maCros version: ${latest ? latest.at : '?'}`;
     { go: '#add', sel: '#askBox', t: 'Type or say what you ate', b: '<i>“2 eggs and 1 cup rice”</i>, <i>“150 g chicken breast”</i>, or by calories: <i>“300 kcal nuggets”</i>. Tap the mic to speak instead.' },
     { go: '#add', sel: '#fabBtn', t: 'Scan or quick add', b: 'Tap the round button above the bar. <b>Scan barcode</b> on packaged food from the grocery or 7-Eleven, <b>Scan label</b> to read the Nutrition Facts from a photo, or <b>Quick add</b> to type calories and macros yourself.' },
     { go: '#add', sel: '#cats', t: 'Browse foods', b: 'Tap <b>Protein</b>, <b>Carbs</b>, <b>Fat</b> or <b>Fiber</b> to see the best sources, or open a category below. Foods marked <b>Estimate</b> are recipe estimates.' },
-    { go: '#menu', sel: '#menuBody .menu-list', t: 'The Menu', b: '<b>Goals</b> for your targets and phases, <b>Progress</b> for your results, <b>Tutorial</b> for this tour and your checklist, and <b>Settings</b>.' },
+    { go: '#menu', sel: '#menuBody .menu-list', t: 'The Menu', b: '<b>Tutorial</b> for this tour and your checklist, <b>Settings</b>, and <b>Send feedback</b>. <b>Progress</b> and <b>Goals</b> have their own buttons on the bar below.' },
     { go: '#goals', sel: '#maintVal', t: 'Maintenance calories', b: 'What you burn in a normal day. Type your own number any time; your phases are built on it.' },
     { go: '#goals', sel: '#goalsBody .phase-list', t: 'Phases', b: 'Bulking, cutting, Hyrox… tap a phase to switch. Its targets load everywhere in the app.' },
     { go: '#goals', sel: '#goalsBody .tgt-grid', t: 'Daily targets', b: 'Change calories and the macros follow. Type a macro yourself and it locks, so the others adjust around it.' },

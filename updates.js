@@ -4,6 +4,19 @@
  * kind: feature (big) · improvement (smaller change) · fix
  */
 window.MACROS_UPDATES = [
+  { at: '2026-10-30 14:06', kind: 'feature', title: 'Say your water and your weight',
+    body: 'Voice now does more than food. Say “one glass of water” and it fills your glass, or say your weight, like “132 pounds today” or “60 kilos”, and it saves your weigh-in. It opens the right page so you can see it.' },
+  { at: '2026-10-30 14:05', kind: 'feature', title: 'Edit a food you logged',
+    body: 'Tap any food on the Dashboard to change how much you had or move it to another meal. Quick adds can be renamed, doubled or halved.' },
+  { at: '2026-10-30 14:04', kind: 'feature', title: 'Progress and Goals on the bottom bar',
+    body: 'Progress and Goals now have their own buttons at the bottom, so they’re one tap away. Menu keeps the Tutorial, Settings and feedback.' },
+  { at: '2026-10-30 14:03', kind: 'improvement', title: 'Quick add, Scan and Voice',
+    body: 'The round button now opens three overlapping circles: Quick add, Scan (barcode or Nutrition Facts label) and Voice.' },
+  { at: '2026-10-30 14:02', kind: 'improvement', title: 'Clear a day or start over',
+    body: 'Dashboard ⋯ → Clear this day empties a Day so you can start it fresh. Settings → Start over from Day 1 starts your Days again; your foods and goals stay. Both can be undone right away.' },
+  { at: '2026-10-30 14:01', kind: 'improvement', title: 'Less text on Add',
+    body: 'The Add page starts straight with the search box, and the water card is shorter.' },
+
   { at: '2026-10-26 12:01', kind: 'improvement', title: 'Send feedback',
     body: 'Found a bug or have an idea? Menu → Send feedback opens an email to us with your phone type already filled in.' },
   { at: '2026-10-26 12:00', kind: 'improvement', title: 'Add to Home Screen help',
