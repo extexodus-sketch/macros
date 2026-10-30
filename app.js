@@ -364,7 +364,18 @@ window.MacrosApp = { start(ctx) {
     const b = e.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act;
     if (act === 'recenttoggle') { recentOpen = !recentOpen; b.setAttribute('aria-expanded', recentOpen); b.nextElementSibling.hidden = !recentOpen; return; }
-    if (act === 'recent') { const f = E.byId(b.dataset.id); if (f) appendQuery(`${b.dataset.g ? b.dataset.g + 'g' : defaultAmountText(f)} ${f.key}`); return; }
+    if (act === 'recent') {
+      const f = E.byId(b.dataset.id), t = +b.dataset.t;
+      const last = t ? days.flatMap(d => d.entries).find(x => x.t === t) : null;
+      // Plain foods go into the box so you can add more; adjusted dishes and estimates are re-added exactly as last time
+      if (f && !f.sugg && !f.parts && (!last || last.name === f.name)) { appendQuery(`${b.dataset.g ? b.dataset.g + 'g' : defaultAmountText(f)} ${f.key}`); return; }
+      if (!last) return;
+      const meal = defaultMeal();
+      const { added, kc, day } = logToDay([{ food: f || { id: last.fid, name: last.name }, qty: last.qty, unit: last.unit, grams: last.grams, name: last.name, amt: last.amt,
+        m: { kcal: last.kcal, p: last.p, c: last.c, f: last.f, fib: last.fib } }], meal); pendingMeal = null;
+      toast(`Added ${last.name} to Day ${day.n} · ${meal} · ${k0(kc)} kcal`, { label: 'Undo', run: () => undoLog(day, added) });
+      showLogged(added, meal); return;
+    }
     if (act === 'add') return addCurrent();
     if (act === 'recipe') return openRecipeForm();
     if (act === 'more') return openSheet(`${sheetHead('More options')}
@@ -409,7 +420,7 @@ window.MacrosApp = { start(ctx) {
     if (!rec.length) return '';
     return `<div class="empty recent-box"><button class="cat-head" type="button" data-act="recenttoggle" aria-expanded="${recentOpen}">
         <span>Recent</span><span class="cat-count">${rec.length}<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M6.3 9.3a1 1 0 0 1 1.4 0L12 13.6l4.3-4.3a1 1 0 1 1 1.4 1.4l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 0 1 0-1.4Z"/></svg></span></button>
-      <div class="recent-body"${recentOpen ? '' : ' hidden'}><p class="muted small" style="margin:0 0 8px">Tap to add the same amount.</p><div class="chips">${rec.map(x => `<button class="chip" type="button" data-act="recent" data-id="${esc(x.last.fid)}" data-g="${Math.round(x.last.grams)}">${esc(x.last.name)} <span class="muted">· ${fmt(x.last.grams, 0)} g</span></button>`).join('')}</div></div>
+      <div class="recent-body"${recentOpen ? '' : ' hidden'}><p class="muted small" style="margin:0 0 8px">Tap to add the same amount.</p><div class="chips">${rec.map(x => `<button class="chip" type="button" data-act="recent" data-id="${esc(x.last.fid)}" data-g="${Math.round(x.last.grams)}" data-t="${x.last.t}">${esc(x.last.name)} <span class="muted">· ${fmt(x.last.grams, 0)} g</span></button>`).join('')}</div></div>
     </div>`;
   }
 
@@ -449,17 +460,36 @@ window.MacrosApp = { start(ctx) {
     vf.hidden = false; vf.classList.add('err'); vfSet('Voice', ''); $('#vfText').textContent = msg; $('#vfDone').hidden = true;
     setTimeout(() => { if (!listening) vf.hidden = true; }, 3500);
   }
+  // Speech results arrive in pieces. Android Chrome repeats everything said so far in each new piece
+  // ("one", "one", "one two"), so glue them carefully: a piece that starts with what we have replaces it,
+  // a piece we already end with is skipped, anything else is added on. Then "two eggs two eggs" → "two eggs".
+  function joinHeard(pieces) {
+    let out = '';
+    for (const raw of pieces) {
+      const s = String(raw || '').trim().replace(/\s+/g, ' '); if (!s) continue;
+      const o = out.toLowerCase(), x = s.toLowerCase();
+      if (!out || x.startsWith(o)) out = s;
+      else if (!o.endsWith(x)) out += ' ' + s;
+    }
+    const rep = out.match(/^(.+?)(?:\s+\1)+$/i);
+    return rep ? rep[1] : out;
+  }
+  let prior = '', restarts = 0;
   function startVoice() {
     if (!SR) return voiceError('Voice isn’t supported in this browser. Use Chrome, Edge or Safari, or type it in Add.');
     if (listening) return;
-    heard = ''; cancelled = false; voiceErr = ''; holdMode = true;
+    heard = ''; prior = ''; restarts = 0; cancelled = false; voiceErr = ''; holdMode = true;
     vf.hidden = false; vf.classList.remove('err'); $('#vfText').textContent = ''; $('#vfDone').hidden = true;
     vfSet('Listening…', 'Let go when you’re done.');
-    rec = new SR(); rec.lang = settings.voiceLang || 'en-PH'; rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
     listening = true; vBtn.classList.add('listening');
+    listen();
+  }
+  function listen() {
+    rec = new SR(); rec.lang = settings.voiceLang || 'en-PH'; rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
     rec.onresult = e => {
-      let txt = ''; for (let i = 0; i < e.results.length; i++) txt += e.results[i][0].transcript;
-      heard = txt.trim(); $('#vfText').textContent = heard;
+      const pieces = []; for (let i = 0; i < e.results.length; i++) pieces.push(e.results[i][0].transcript);
+      const now = joinHeard(pieces);   // this listening session on its own, then after what came before
+      heard = prior && now ? `${prior} ${now}` : prior || now; $('#vfText').textContent = heard;
       if (!holdMode) { clearTimeout(silenceT); silenceT = setTimeout(stopVoice, 1600); }   // tapped: finish after a pause
     };
     rec.onerror = e => {
@@ -470,6 +500,8 @@ window.MacrosApp = { start(ctx) {
         'no-speech': 'Didn’t catch anything. Hold the mic and try again.', 'audio-capture': 'No microphone found.' }[e.error] || 'Voice stopped: ' + e.error;
     };
     rec.onend = () => {
+      // Phones stop listening after a short silence; if you're still holding, keep going with what you've said so far
+      if (!cancelled && holdMode && pressT && !voiceErr && restarts < 8) { restarts++; prior = heard; try { listen(); return; } catch { /* fall through */ } }
       listening = false; vBtn.classList.remove('listening'); clearTimeout(silenceT);
       if (cancelled) { vf.hidden = true; return; }
       if (voiceErr && !heard) return voiceError(voiceErr);
@@ -1342,7 +1374,7 @@ window.MacrosApp = { start(ctx) {
       if (fd.get('spoon')) { units.tbsp = 15; units.tsp = 5; }
       const row = { id: 'rc-' + uid(), src: 'R', name, aliases: [], kcal: r1(t.kcal * k), p: +(t.p * k).toFixed(2), c: +(t.c * k).toFixed(2), f: +(t.f * k).toFixed(2), fib: +(t.fib * k).toFixed(2),
         units, d: 'serving', recipe: { totalG: r1(totalG), servings, ingredients: foods.map(i => ({ name: i.food.name, grams: r1(i.grams) })) } };
-      custom.push(row); saveCustom(); closeSheet();
+      custom.push(row); saveCustom(); closeSheet(); renderFoods();   // show it under My Recipes straight away
       toast(`Saved “${name}”: ${k0(t.kcal / servings)} kcal per serving`);
     });
   }

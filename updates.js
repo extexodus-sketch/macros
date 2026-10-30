@@ -4,6 +4,15 @@
  * kind: feature (big) · improvement (smaller change) · fix
  */
 window.MACROS_UPDATES = [
+  { at: '2026-10-31 10:03', kind: 'fix', title: 'Voice no longer repeats words',
+    body: 'On some Android phones one word came out two or three times. Voice now hears each word once, and keeps listening while you hold even if your phone pauses.' },
+  { at: '2026-10-31 10:02', kind: 'fix', title: 'Recent adds dishes exactly',
+    body: 'Tapping an adjusted dish or estimate in Recent (like “Tinola · very oily”) now adds it exactly as last time.' },
+  { at: '2026-10-31 10:01', kind: 'fix', title: 'New recipes show right away',
+    body: 'A recipe you save now appears under My Recipes straight away.' },
+  { at: '2026-10-31 10:00', kind: 'fix', title: 'Safer syncing',
+    body: 'Saving to your account is sturdier, so a day never fails to sync because of an empty field.' },
+
   { at: '2026-10-30 18:02', kind: 'feature', title: 'Hold to talk',
     body: 'Hold the mic circle and say what you ate. Your words show up as you speak. Let go and the foods go straight onto your day. Water and your weight work the same way. If it can’t match something, it opens in Add so you can fix it. Prefer to tap? Tap the mic, talk, then pause.' },
   { at: '2026-10-30 18:01', kind: 'improvement', title: 'Quick add, Scan and Voice always there',

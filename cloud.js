@@ -20,6 +20,7 @@ export async function initCloud(config) {
   }
   const userRef = uid => F.doc(db, 'users', uid);
   const daysCol = uid => F.collection(db, 'users', uid, 'days');
+  const clean = o => JSON.parse(JSON.stringify(o));   // drops undefined fields, which Firestore rejects
   const googleProvider = () => { const p = new A.GoogleAuthProvider(); p.setCustomParameters({ prompt: 'select_account' }); return p; };
   const NEEDS_REDIRECT = ['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment', 'auth/web-storage-unsupported'];
 
@@ -42,8 +43,9 @@ export async function initCloud(config) {
 
     async loadProfile(uid) { const s = await F.getDoc(userRef(uid)); return s.exists() ? s.data() : null; },
     async loadDays(uid) { const s = await F.getDocs(daysCol(uid)); return s.docs.map(d => ({ id: d.id, ...d.data() })); },
-    saveProfile: (uid, data) => F.setDoc(userRef(uid), data, { merge: true }),
-    saveDay: (uid, day) => { const { id, ...rest } = day; return F.setDoc(F.doc(daysCol(uid), id), rest); },
+    // Firestore refuses fields set to undefined; a JSON round trip drops them so a save never fails over one
+    saveProfile: (uid, data) => F.setDoc(userRef(uid), clean(data), { merge: true }),
+    saveDay: (uid, day) => { const { id, ...rest } = day; return F.setDoc(F.doc(daysCol(uid), id), clean(rest)); },
     deleteDay: (uid, id) => F.deleteDoc(F.doc(daysCol(uid), id)),
     // live updates from your other devices (ignores echoes of this device's own unsent writes)
     watch(uid, onProfile, onDays) {
