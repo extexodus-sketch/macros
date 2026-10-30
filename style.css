@@ -640,24 +640,6 @@ button.menu-row { width: 100%; background: none; border: 0; border-top: 1px soli
 .cb-oil { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: .92rem; font-weight: 600; }
 .cb-oil .lvl { grid-template-columns: repeat(3, 1fr); flex: 1 1 auto; }
 
-/* Centre button above the bottom bar (Scan barcode · Quick add) */
-.fab { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 22;
-  width: 58px; height: 58px; border-radius: 50%; border: 4px solid var(--bg); background: var(--accent); color: var(--accent-ink);
-  display: grid; place-items: center; box-shadow: 0 6px 18px rgba(11, 133, 115, .35); cursor: pointer; transition: transform .15s, background .15s; }
-.fab:active { transform: translateX(-50%) scale(.94); }
-.fab .fab-close, .fab.open .fab-open { display: none; }
-.fab.open .fab-close { display: block; }
-.fab.open { background: var(--text); box-shadow: var(--shadow); }
-.fab-backdrop { position: fixed; inset: 0; z-index: 21; background: rgba(5, 12, 10, .35); animation: fade .15s; }
-.fab-menu { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(142px + env(safe-area-inset-bottom)); z-index: 22;
-  display: flex; gap: 12px; }
-  background: var(--surface); color: var(--text); font-weight: 700; font-size: .85rem; box-shadow: var(--shadow); cursor: pointer; animation: pop-up .18s ease-out both; }
-@keyframes pop-up { from { opacity: 0; transform: translateY(14px) scale(.9); } to { opacity: 1; transform: none; } }
-@media (min-width: 720px) { .fab { bottom: 88px; } .fab-menu { bottom: 156px; } }
-/* Room for the centre button: the toast and page content sit above it */
-.toast { bottom: calc(146px + env(safe-area-inset-bottom)); }
-.app { padding-bottom: calc(150px + env(safe-area-inset-bottom)); }
-
 /* Scan label */
 .label-pick { position: relative; margin-top: 4px; }
 .label-pick.busy { opacity: .6; pointer-events: none; }
@@ -672,21 +654,6 @@ button.menu-row { width: 100%; background: none; border: 0; border-top: 1px soli
 .tabbar a { font-size: .68rem; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
-/* Centre button: three overlapping circles (Quick add · Scan · Voice), the middle one raised, like a Venn diagram */
-.fab-menu { gap: 0; align-items: flex-end; }
-.fab-circle { position: relative; width: 92px; height: 92px; margin: 0 -11px; border-radius: 50%; padding: 0; cursor: pointer;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-  background: color-mix(in srgb, var(--surface) 93%, transparent); color: var(--text);
-  border: 2px solid color-mix(in srgb, var(--accent-bright) 55%, transparent); box-shadow: var(--shadow);
-  font-weight: 700; font-size: .76rem; animation: pop-up .18s ease-out both; }
-.fab-circle svg { color: var(--accent); }
-.fab-circle.mid { z-index: 1; transform: translateY(-18px); width: 98px; height: 98px; background: color-mix(in srgb, var(--accent-soft) 94%, transparent); animation-delay: .03s; }
-.fab-circle:last-child { animation-delay: .06s; }
-.fab-circle:hover, .fab-circle:focus-visible { background: var(--surface); z-index: 2; }
-.fab-circle.mid:hover, .fab-circle.mid:focus-visible { background: var(--accent-soft); }
-.fab-menu { bottom: calc(140px + env(safe-area-inset-bottom)); }
-@media (min-width: 720px) { .fab-menu { bottom: 154px; } }
-
 /* Tap a logged food to edit it */
 .entry .e-main[data-act="edit"] { cursor: pointer; border-radius: 8px; }
 .entry .e-main[data-act="edit"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -694,3 +661,44 @@ button.menu-row { width: 100%; background: none; border: 0; border-top: 1px soli
 /* Highlight after a voice command: the water glass or the weigh-in numbers */
 @keyframes ring-in { 0%, 60% { box-shadow: 0 0 0 3px var(--accent-bright); } 100% { box-shadow: 0 0 0 0 transparent; } }
 .water.flash, .stat-grid.flash { animation: ring-in 2.6s ease-out; border-radius: 14px; }
+
+/* Three circles above the Add tab, always visible: Quick add · Scan · Voice. Green, white outline, white icon, overlapping like a Venn diagram */
+.fab-dock { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(70px + env(safe-area-inset-bottom)); z-index: 22;
+  display: flex; align-items: flex-end; pointer-events: none; }
+.fab-circle { pointer-events: auto; position: relative; width: 58px; height: 58px; margin: 0 -7px; padding: 0; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer; color: #fff;
+  background: color-mix(in srgb, var(--accent) 90%, transparent); border: 3px solid #fff; box-shadow: 0 6px 16px rgba(11, 133, 115, .32);
+  transition: transform .12s, background .12s; -webkit-tap-highlight-color: transparent; }
+.fab-circle svg { color: #fff; width: 24px; height: 24px; }
+.fab-circle.mid { z-index: 1; width: 64px; height: 64px; transform: translateY(-12px); background: color-mix(in srgb, var(--accent-bright) 92%, transparent); }
+.fab-circle.mid svg { width: 27px; height: 27px; }
+.fab-circle:active { transform: scale(.94); }
+.fab-circle.mid:active { transform: translateY(-12px) scale(.94); }
+.fab-circle:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+#voiceBtn { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+#voiceBtn.listening { background: var(--danger); animation: pulse 1.2s infinite; z-index: 2; }
+@media (min-width: 720px) { .fab-dock { bottom: 84px; } }
+/* Content and the toast sit above the circles */
+.toast { bottom: calc(150px + env(safe-area-inset-bottom)); }
+.app { padding-bottom: calc(160px + env(safe-area-inset-bottom)); }
+
+/* Voice card: floats above the circles and shows what you say as you say it */
+.voice-float { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(158px + env(safe-area-inset-bottom)); z-index: 45;
+  width: min(440px, calc(100% - 32px)); background: var(--surface); border: 2px solid var(--accent-bright); border-radius: 22px;
+  box-shadow: var(--shadow); padding: 12px 14px 12px 16px; animation: fade .15s; }
+.voice-float.err { border-color: var(--line); }
+.vf-top { display: flex; align-items: center; gap: 8px; }
+.vf-top b { flex: 1; font-size: .9rem; color: var(--accent); }
+.voice-float.err .vf-top b { color: var(--muted); }
+.vf-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); animation: pulse 1.2s infinite; }
+.voice-float.err .vf-dot { display: none; }
+.vf-text { margin: 6px 0 8px; min-height: 1.6em; font-size: 1.3rem; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
+.vf-text:empty::before { content: "Say what you ate…"; color: var(--muted); font-weight: 500; }
+.voice-float.err .vf-text { font-size: 1rem; font-weight: 600; }
+.vf-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+@media (min-width: 720px) { .voice-float { bottom: 172px; } }
+
+/* Add page: slim type-only search box under the water glass */
+.ask-box.slim { margin-top: 12px; border-radius: 16px; box-shadow: none; }
+.ask-box.slim textarea { padding: 12px 50px 12px 16px; font-size: 1rem; min-height: 48px; }
+.ask-box.slim .clear-q { right: 8px; }

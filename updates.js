@@ -4,6 +4,13 @@
  * kind: feature (big) · improvement (smaller change) · fix
  */
 window.MACROS_UPDATES = [
+  { at: '2026-10-30 18:02', kind: 'feature', title: 'Hold to talk',
+    body: 'Hold the mic circle and say what you ate. Your words show up as you speak. Let go and the foods go straight onto your day. Water and your weight work the same way. If it can’t match something, it opens in Add so you can fix it. Prefer to tap? Tap the mic, talk, then pause.' },
+  { at: '2026-10-30 18:01', kind: 'improvement', title: 'Quick add, Scan and Voice always there',
+    body: 'The three green circles now sit above the bar all the time, one tap away: Quick add on the left, Scan in the middle, Voice on the right.' },
+  { at: '2026-10-30 18:00', kind: 'improvement', title: 'Water first on Add',
+    body: 'The Add page now starts with your water glass, then a smaller search box for typing.' },
+
   { at: '2026-10-30 14:06', kind: 'feature', title: 'Say your water and your weight',
     body: 'Voice now does more than food. Say “one glass of water” and it fills your glass, or say your weight, like “132 pounds today” or “60 kilos”, and it saves your weigh-in. It opens the right page so you can see it.' },
   { at: '2026-10-30 14:05', kind: 'feature', title: 'Edit a food you logged',

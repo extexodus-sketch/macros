@@ -47,21 +47,17 @@
         <div id="pageWeek" class="dash-page" hidden></div>
       </section>
 
-      <!-- ADD: type or say it on top, browse foods below -->
+      <!-- ADD: water, then type a food, then browse foods -->
       <section id="view-add" class="view" hidden aria-labelledby="askLabel">
+        <div class="water" id="water"></div>
         <div class="ask">
           <label for="q" id="askLabel" class="sr-only">What are you eating?</label>
-          <div class="ask-box" id="askBox">
-            <textarea id="q" rows="2" autocomplete="off" autocapitalize="off" spellcheck="false"
-              placeholder="e.g. 100g chicken breast, 1 cup rice, 300 kcal nuggets"></textarea>
+          <div class="ask-box slim" id="askBox">
+            <textarea id="q" rows="1" autocomplete="off" autocapitalize="off" spellcheck="false"
+              placeholder="Type a food, e.g. 2 eggs, 1 cup rice"></textarea>
             <button id="clearQ" class="clear-q" type="button" aria-label="Clear" hidden>&times;</button>
-            <button id="mic" class="mic" type="button" aria-label="Speak what you ate">
-              <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-6a3.5 3.5 0 1 0-7 0v6A3.5 3.5 0 0 0 12 15Zm6-3.5a1 1 0 1 0-2 0 4 4 0 0 1-8 0 1 1 0 1 0-2 0 6 6 0 0 0 5 5.91V20H9a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2h-2v-2.59a6 6 0 0 0 5-5.91Z"/></svg>
-            </button>
           </div>
-          <p class="voice-status" id="voiceStatus" aria-live="polite"></p>
         </div>
-        <div class="water" id="water"></div>
         <div id="results" aria-live="polite"></div>
         <div id="browse">
           <div class="foods-head">
@@ -105,17 +101,19 @@
       <a href="#goals" data-tab="goals"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20Zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm0 3a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm0 2a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z"/></svg><span>Goals</span></a>
       <a href="#menu" data-tab="menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 6a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 6a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm1 5a1 1 0 1 0 0 2h14a1 1 0 1 0 0-2H5Z"/></svg><span>Menu</span></a>
     </nav>
-    <!-- Centre button above the bar: Scan barcode or Quick add (like a wallet app's Scan QR) -->
-    <div class="fab-backdrop" id="fabBackdrop" hidden></div>
-    <div class="fab-menu" id="fabMenu" hidden>
-      <button class="fab-circle" id="quickBtn" type="button"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg><span>Quick add</span></button>
-      <button class="fab-circle mid" id="scanAnyBtn" type="button"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M4 4h4v2H6v2H4V4Zm12 0h4v4h-2V6h-2V4ZM4 16h2v2h2v2H4v-4Zm14 2v-2h2v4h-4v-2h2ZM7 8h1.5v8H7V8Zm3 0h1v8h-1V8Zm2.5 0H14v8h-1.5V8Zm3 0h1v8h-1V8Z"/></svg><span>Scan</span></button>
-      <button class="fab-circle" id="voiceBtn" type="button"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-6a3.5 3.5 0 1 0-7 0v6A3.5 3.5 0 0 0 12 15Zm6-3.5a1 1 0 1 0-2 0 4 4 0 0 1-8 0 1 1 0 1 0-2 0 6 6 0 0 0 5 5.91V20H9a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2h-2v-2.59a6 6 0 0 0 5-5.91Z"/></svg><span>Voice</span></button>
+    <!-- Always-visible circles above the Add tab: Quick add · Scan · Voice (hold to talk) -->
+    <div class="fab-dock" id="fabDock">
+      <button class="fab-circle" id="quickBtn" type="button" aria-label="Quick add" title="Quick add"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg></button>
+      <button class="fab-circle mid" id="scanAnyBtn" type="button" aria-label="Scan a barcode or a Nutrition Facts label" title="Scan"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M4 4h4v2H6v2H4V4Zm12 0h4v4h-2V6h-2V4ZM4 16h2v2h2v2H4v-4Zm14 2v-2h2v4h-4v-2h2ZM7 8h1.5v8H7V8Zm3 0h1v8h-1V8Zm2.5 0H14v8h-1.5V8Zm3 0h1v8h-1V8Z"/></svg></button>
+      <button class="fab-circle" id="voiceBtn" type="button" aria-label="Hold to say what you ate, a glass of water or your weight" title="Hold to talk"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-6a3.5 3.5 0 1 0-7 0v6A3.5 3.5 0 0 0 12 15Zm6-3.5a1 1 0 1 0-2 0 4 4 0 0 1-8 0 1 1 0 1 0-2 0 6 6 0 0 0 5 5.91V20H9a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2h-2v-2.59a6 6 0 0 0 5-5.91Z"/></svg></button>
     </div>
-    <button class="fab" id="fabBtn" type="button" aria-label="Quick add, scan or voice" aria-expanded="false" aria-controls="fabMenu">
-      <svg class="fab-open" viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M4 4h4v2H6v2H4V4Zm12 0h4v4h-2V6h-2V4ZM4 16h2v2h2v2H4v-4Zm14 2v-2h2v4h-4v-2h2ZM7 8h1.5v8H7V8Zm3 0h1v8h-1V8Zm2.5 0H14v8h-1.5V8Zm3 0h1v8h-1V8Z"/></svg>
-      <svg class="fab-close" viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M6.7 5.3a1 1 0 0 0-1.4 1.4L10.6 12l-5.3 5.3a1 1 0 1 0 1.4 1.4l5.3-5.3 5.3 5.3a1 1 0 0 0 1.4-1.4L13.4 12l5.3-5.3a1 1 0 0 0-1.4-1.4L12 10.6 6.7 5.3Z"/></svg>
-    </button>
+    <!-- Voice: floats above the circles and shows what you say as you say it -->
+    <div class="voice-float" id="voiceFloat" hidden aria-live="polite">
+      <div class="vf-top"><span class="vf-dot" aria-hidden="true"></span><b id="vfState">Listening…</b>
+        <button class="icon-btn" type="button" id="vfCancel" aria-label="Cancel">&times;</button></div>
+      <p class="vf-text" id="vfText"></p>
+      <div class="vf-foot"><span class="muted small" id="vfHint">Let go when you’re done.</span><button class="btn small" type="button" id="vfDone" hidden>Done</button></div>
+    </div>
   </div>
 
   <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
