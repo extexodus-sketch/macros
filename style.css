@@ -662,23 +662,45 @@ button.menu-row { width: 100%; background: none; border: 0; border-top: 1px soli
 @keyframes ring-in { 0%, 60% { box-shadow: 0 0 0 3px var(--accent-bright); } 100% { box-shadow: 0 0 0 0 transparent; } }
 .water.flash, .stat-grid.flash { animation: ring-in 2.6s ease-out; border-radius: 14px; }
 
-/* Three circles above the Add tab, always visible: Quick add · Scan · Voice. Green, white outline, white icon, overlapping like a Venn diagram */
-.fab-dock { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(70px + env(safe-area-inset-bottom)); z-index: 22;
-  display: flex; align-items: flex-end; pointer-events: none; }
-.fab-circle { pointer-events: auto; position: relative; width: 58px; height: 58px; margin: 0 -7px; padding: 0; border-radius: 50%;
-  display: grid; place-items: center; cursor: pointer; color: #fff;
-  background: color-mix(in srgb, var(--accent) 90%, transparent); border: 3px solid #fff; box-shadow: 0 6px 16px rgba(11, 133, 115, .32);
-  transition: transform .12s, background .12s; -webkit-tap-highlight-color: transparent; }
-.fab-circle svg { color: #fff; width: 24px; height: 24px; }
-.fab-circle.mid { z-index: 1; width: 64px; height: 64px; transform: translateY(-12px); background: color-mix(in srgb, var(--accent-bright) 92%, transparent); }
-.fab-circle.mid svg { width: 27px; height: 27px; }
-.fab-circle:active { transform: scale(.94); }
-.fab-circle.mid:active { transform: translateY(-12px) scale(.94); }
-.fab-circle:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-#voiceBtn { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-#voiceBtn.listening { background: var(--danger); animation: pulse 1.2s infinite; z-index: 2; }
-@media (min-width: 720px) { .fab-dock { bottom: 84px; } }
-/* Content and the toast sit above the circles */
+/* The HOLD button above the Add tab: hold, slide left / up / right, let go.
+   .hold-menu is a zero-size point at the button's centre; the ring and bubbles are placed around it. */
+.hold-menu { position: fixed; left: 50%; bottom: calc(103px + env(safe-area-inset-bottom)); width: 0; height: 0; z-index: 30; }
+.hold-btn { position: absolute; left: -32px; top: -32px; width: 64px; height: 64px; border-radius: 50%; padding: 0; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  background: var(--accent); color: #fff; border: 3px solid #fff; box-shadow: 0 6px 18px rgba(11, 133, 115, .35);
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+  transition: transform .12s, background .12s; z-index: 2; }
+.hold-btn .hb-word { font-size: .56rem; font-weight: 800; letter-spacing: .12em; line-height: 1; }
+.hold-btn .hb-mic { display: none; }
+.hold-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.hold-menu.open .hold-btn { transform: scale(.92); background: var(--accent-bright); }
+.hold-btn.listening { background: var(--danger); animation: pulse 1.2s infinite; }
+.hold-btn.listening .hb-hold, .hold-btn.listening .hb-word { display: none; }
+.hold-btn.listening .hb-mic { display: block; width: 26px; height: 26px; }
+/* the broken three-piece ring (open at the bottom) */
+.hold-ring { position: absolute; left: -100px; top: -100px; width: 200px; height: 200px; pointer-events: none; overflow: visible;
+  opacity: 0; transform: scale(.7); transition: opacity .14s, transform .14s; }
+.hold-menu.open .hold-ring { opacity: 1; transform: none; }
+.ring-seg { fill: none; stroke: var(--accent); stroke-opacity: .32; stroke-width: 12; stroke-linecap: round; transition: stroke-opacity .1s, stroke-width .1s; }
+.ring-seg.on { stroke: var(--accent-bright); stroke-opacity: 1; stroke-width: 15; }
+.hold-menu.tapped .ring-seg { stroke-opacity: .5; }
+/* the bubble for each piece: pops out when you slide toward it (all three show after a tap) */
+.hold-opt { --x: 0px; --y: 0px; position: absolute; left: -30px; top: -30px; width: 60px; height: 60px; border-radius: 50%; padding: 0;
+  display: grid; place-items: center; background: var(--accent); color: #fff; border: 3px solid #fff; box-shadow: var(--shadow);
+  opacity: 0; transform: translate(var(--x), var(--y)) scale(.4); pointer-events: none; transition: opacity .14s, transform .16s cubic-bezier(.3, 1.4, .5, 1); cursor: pointer; }
+.hold-opt[data-dir="left"] { --x: -104px; }
+.hold-opt[data-dir="up"] { --y: -104px; }
+.hold-opt[data-dir="right"] { --x: 104px; }
+.hold-opt svg { width: 26px; height: 26px; color: #fff; }
+.hold-opt span { position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: .78rem; font-weight: 800;
+  color: var(--text); background: var(--surface); border-radius: 8px; padding: 2px 8px; box-shadow: var(--shadow); }
+.hold-opt.on, .hold-menu.tapped .hold-opt { opacity: 1; transform: translate(var(--x), var(--y)) scale(1); }
+.hold-opt.on { transform: translate(var(--x), var(--y)) scale(1.15); background: var(--accent-bright); }
+.hold-menu.tapped .hold-opt { pointer-events: auto; }
+.hold-opt:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.hold-backdrop { position: fixed; inset: 0; z-index: 29; background: rgba(5, 12, 10, .3); animation: fade .15s; }
+@media (min-width: 720px) { .hold-menu { bottom: 118px; } }
+/* Content and the toast sit above the HOLD button */
 .toast { bottom: calc(150px + env(safe-area-inset-bottom)); }
 .app { padding-bottom: calc(160px + env(safe-area-inset-bottom)); }
 

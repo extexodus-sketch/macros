@@ -4,6 +4,13 @@
  * kind: feature (big) · improvement (smaller change) · fix
  */
 window.MACROS_UPDATES = [
+  { at: '2026-10-31 18:00', kind: 'feature', title: 'Hold and slide',
+    body: 'The three circles are now one round HOLD button. Hold it and slide: left for Quick add, up for Scan, right for Voice, then let go. Just tap it to see all three.' },
+  { at: '2026-10-31 15:01', kind: 'improvement', title: 'Voice: take your time',
+    body: 'Once Voice is on, say what you ate. Pauses are fine, so you have time to think. Tap the red mic or Done when you’re finished. × cancels.' },
+  { at: '2026-10-31 15:00', kind: 'fix', title: 'Exact weigh-ins',
+    body: 'Say or type 133 pounds and it saves exactly 133, not 132.9 or 133.1.' },
+
   { at: '2026-10-31 10:03', kind: 'fix', title: 'Voice no longer repeats words',
     body: 'On some Android phones one word came out two or three times. Voice now hears each word once, and keeps listening while you hold even if your phone pauses.' },
   { at: '2026-10-31 10:02', kind: 'fix', title: 'Recent adds dishes exactly',

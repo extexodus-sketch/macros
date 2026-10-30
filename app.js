@@ -125,9 +125,9 @@ window.MacrosApp = { start(ctx) {
           <li>Tap the note icon next to a meal to write down how it went.</li>
           <li>Swipe left, or tap <b>This week</b>, to see Monday to Sunday.</li></ul>`,
       add: `<ol class="steps">
-          <li><b class="n">1</b><div><b>Type it, or hold Voice</b> (the right circle above the bar) and say what you ate, with amounts: <span class="muted">“150 grams lean ground pork and one cup of rice”</span>, or by calories: <span class="muted">“532 calories of chicken nuggets”</span>. English, Tagalog or Taglish all work.</div></li>
+          <li><b class="n">1</b><div><b>Type it, or use Voice</b> (hold the round button above the bar and slide right) and say what you ate, with amounts: <span class="muted">“150 grams lean ground pork and one cup of rice”</span>, or by calories: <span class="muted">“532 calories of chicken nuggets”</span>. English, Tagalog or Taglish all work.</div></li>
           <li><b class="n">2</b><div><b>Check the matches.</b> Fix any amount, switch between cooked and raw, or pick a different food. No amount? It assumes 1 normal serving and tells you.</div></li>
-          <li><b class="n">3</b><div>The circles above the bar are <b>Quick add</b>, <b>Scan</b> (barcode or Nutrition Facts label) and <b>Voice</b>. Hold Voice and talk, then let go; foods go straight onto your day. You can also say <span class="muted">“one glass of water”</span> or your weight, <span class="muted">“132 pounds today”</span>.</div></li>
+          <li><b class="n">3</b><div>Hold the round button above the bar and slide: <b>left</b> Quick add, <b>up</b> Scan (barcode or Nutrition Facts label), <b>right</b> Voice. Just tap it to see all three. With Voice, talk (take your time; pauses are fine), then tap the red mic or Done; foods go straight onto your day. You can also say <span class="muted">“one glass of water”</span> or your weight, <span class="muted">“132 pounds today”</span>.</div></li>
           <li><b class="n">4</b><div><b>Add to your day</b> for a running total. Made your own sauce? Type its ingredients and tap <b>Save as recipe</b>.</div></li>
         </ol>
         <p class="muted small" style="margin:14px 0 0">Weights are <b>cooked, as eaten</b> unless you pick raw. Calculations use only USDA, FNRI and label values (${verified} foods). Recipe estimates are marked <b>Estimate</b> and are only used when you pick one.</p>
@@ -449,12 +449,13 @@ window.MacrosApp = { start(ctx) {
     [head, ...els].filter(Boolean).forEach(el => { el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 2600); });
   }
 
-  // ---------- Voice: hold the Voice circle and talk ----------
-  // What you say shows in a floating card as you say it. Let go: water and weigh-ins are logged, foods that all match
-  // go straight onto your day, and anything it can't match opens in Add to check. A quick tap works too: pause or tap Done.
+  // ---------- Voice: tap the mic to start, tap again (or Done) to finish ----------
+  // Silence doesn't stop it, so there's time to think. What you say shows in a floating card. Finish: water and
+  // weigh-ins are logged, foods that all match go straight onto your day, and anything it can't match opens in Add. × cancels.
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let rec = null, heard = '', silenceT = null, holdMode = false, cancelled = false, voiceErr = '', pressT = 0;
-  const vBtn = $('#voiceBtn'), vf = $('#voiceFloat');
+  const VOICE_MAX_MS = 3 * 60 * 1000;   // a forgotten mic finishes by itself after 3 minutes
+  let rec = null, heard = '', cancelled = false, finishing = false, voiceErr = '', startedAt = 0, sessStart = 0, fastEnds = 0;
+  const vBtn = $('#fabHold'), vf = $('#voiceFloat');   // while listening, the HOLD button turns into a red mic that finishes
   const vfSet = (state, hint) => { $('#vfState').textContent = state; if (hint != null) $('#vfHint').textContent = hint; };
   function voiceError(msg) {
     vf.hidden = false; vf.classList.add('err'); vfSet('Voice', ''); $('#vfText').textContent = msg; $('#vfDone').hidden = true;
@@ -474,46 +475,49 @@ window.MacrosApp = { start(ctx) {
     const rep = out.match(/^(.+?)(?:\s+\1)+$/i);
     return rep ? rep[1] : out;
   }
-  let prior = '', restarts = 0;
+  let prior = '';
   function startVoice() {
     if (!SR) return voiceError('Voice isn’t supported in this browser. Use Chrome, Edge or Safari, or type it in Add.');
     if (listening) return;
-    heard = ''; prior = ''; restarts = 0; cancelled = false; voiceErr = ''; holdMode = true;
-    vf.hidden = false; vf.classList.remove('err'); $('#vfText').textContent = ''; $('#vfDone').hidden = true;
-    vfSet('Listening…', 'Let go when you’re done.');
-    listening = true; vBtn.classList.add('listening');
+    heard = ''; prior = ''; cancelled = false; finishing = false; voiceErr = ''; startedAt = Date.now(); fastEnds = 0;
+    vf.hidden = false; vf.classList.remove('err'); $('#vfText').textContent = ''; $('#vfDone').hidden = false;
+    vfSet('Listening…', 'Take your time. Tap the mic again or Done when you’re finished.');
+    listening = true; vBtn.classList.add('listening'); vBtn.setAttribute('aria-pressed', 'true');
     listen();
   }
   function listen() {
     rec = new SR(); rec.lang = settings.voiceLang || 'en-PH'; rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
+    sessStart = Date.now();
     rec.onresult = e => {
       const pieces = []; for (let i = 0; i < e.results.length; i++) pieces.push(e.results[i][0].transcript);
       const now = joinHeard(pieces);   // this listening session on its own, then after what came before
       heard = prior && now ? `${prior} ${now}` : prior || now; $('#vfText').textContent = heard;
-      if (!holdMode) { clearTimeout(silenceT); silenceT = setTimeout(stopVoice, 1600); }   // tapped: finish after a pause
+      fastEnds = 0;
     };
     rec.onerror = e => {
-      if (e.error === 'aborted') return;
+      if (e.error === 'aborted' || e.error === 'no-speech') return;   // silence is fine: keep listening
       voiceErr = { 'not-allowed': 'Microphone blocked. Allow mic access for this site in your browser settings.',
         'service-not-allowed': 'Microphone blocked. Allow mic access for this site in your browser settings.',
         network: 'Voice needs internet (your phone turns speech into text). Typing works offline.',
-        'no-speech': 'Didn’t catch anything. Hold the mic and try again.', 'audio-capture': 'No microphone found.' }[e.error] || 'Voice stopped: ' + e.error;
+        'audio-capture': 'No microphone found.' }[e.error] || 'Voice stopped: ' + e.error;
     };
     rec.onend = () => {
-      // Phones stop listening after a short silence; if you're still holding, keep going with what you've said so far
-      if (!cancelled && holdMode && pressT && !voiceErr && restarts < 8) { restarts++; prior = heard; try { listen(); return; } catch { /* fall through */ } }
-      listening = false; vBtn.classList.remove('listening'); clearTimeout(silenceT);
+      // Phones stop listening after a pause. Until you finish, start again and keep what you've said so far
+      // (but give up if the phone keeps ending straight away, or after 3 minutes).
+      if (Date.now() - sessStart < 400) fastEnds++;
+      if (!cancelled && !finishing && !voiceErr && fastEnds < 5 && Date.now() - startedAt < VOICE_MAX_MS) { prior = heard; try { listen(); return; } catch { /* fall through */ } }
+      listening = false; vBtn.classList.remove('listening'); vBtn.setAttribute('aria-pressed', 'false');
       if (cancelled) { vf.hidden = true; return; }
       if (voiceErr && !heard) return voiceError(voiceErr);
       handleSpoken(heard);
     };
     try { rec.start(); } catch (err) { listening = false; vBtn.classList.remove('listening'); voiceError('Could not start voice input.'); }
   }
-  function stopVoice() { clearTimeout(silenceT); if (rec) try { rec.stop(); } catch { /* already stopped */ } }
-  // Let go (or tapped): water / weight, foods straight to your day, or Add to check what it couldn't match
+  function stopVoice() { finishing = true; if (rec) try { rec.stop(); } catch { /* already stopped */ } }
+  // Finished: water / weight, foods straight to your day, or Add to check what it couldn't match
   function handleSpoken(text) {
     text = String(text || '').trim();
-    if (!text) return voiceError('Didn’t catch that. Hold the mic and try again.');
+    if (!text) return voiceError('Didn’t catch that. Tap the mic and try again.');
     vf.hidden = true;
     if (runCommand(text)) return;
     const res = E.parse(text), foods = res.items.filter(i => i.kind === 'food'), odd = res.items.filter(i => i.kind !== 'food');
@@ -528,28 +532,9 @@ window.MacrosApp = { start(ctx) {
       toast(what ? `Couldn’t match “${what}”. Check it here, then Add.` : 'Check what you said, then tap Add.');
     }
   }
-  // Hold to talk; a quick tap switches to "tap" mode (stops after a pause, or Done)
-  vBtn.addEventListener('pointerdown', e => {
-    e.preventDefault();
-    if (listening) { if (!holdMode) stopVoice(); return; }
-    pressT = Date.now(); try { vBtn.setPointerCapture(e.pointerId); } catch { /* not supported */ }
-    startVoice();
-  });
-  const release = () => {
-    if (!pressT) return; const quick = Date.now() - pressT < 350; pressT = 0;
-    if (!listening) return;
-    if (quick) { holdMode = false; vfSet('Listening…', 'Say it, then pause. Or tap Done.'); $('#vfDone').hidden = false; clearTimeout(silenceT); silenceT = setTimeout(stopVoice, 6000); }
-    else stopVoice();
-  };
-  vBtn.addEventListener('pointerup', release); vBtn.addEventListener('pointercancel', release);
-  vBtn.addEventListener('contextmenu', e => e.preventDefault());
-  vBtn.addEventListener('keydown', e => {
-    if (e.key !== 'Enter' && e.key !== ' ') return; e.preventDefault();
-    if (listening) return stopVoice();
-    startVoice(); if (listening) { holdMode = false; vfSet('Listening…', 'Say it, then pause. Or tap Done.'); $('#vfDone').hidden = false; silenceT = setTimeout(stopVoice, 6000); }
-  });
+  $('#voiceBtn').addEventListener('click', () => { if (listening) stopVoice(); else startVoice(); });
   $('#vfDone').onclick = stopVoice;
-  $('#vfCancel').onclick = () => { cancelled = true; clearTimeout(silenceT); if (rec) try { rec.abort(); } catch { /* done */ } vf.hidden = true; };
+  $('#vfCancel').onclick = () => { cancelled = true; if (rec) try { rec.abort(); } catch { /* done */ } vf.hidden = true; };
 
   // Things you can say (or type) besides food. Returns { water: n } or { kg }, or null for food.
   const CMD_NUM = { a: 1, an: 1, one: 1, isa: 1, isang: 1, two: 2, dalawa: 2, dalawang: 2, three: 3, tatlo: 3, tatlong: 3, four: 4, apat: 4, na: 1 };
@@ -1081,13 +1066,65 @@ window.MacrosApp = { start(ctx) {
   }
 
   // ---------- Barcode: scan → your saved products → Open Food Facts → type the label once ----------
-  // Scan: one circle, then pick barcode or the Nutrition Facts label
-  $('#scanAnyBtn').addEventListener('click', () => {
+  // Scan: pick barcode or the Nutrition Facts label
+  $('#scanAnyBtn').addEventListener('click', () => openScanChoice());
+  function openScanChoice() {
     openSheet(`${sheetHead('Scan', 'What are you scanning?')}<div class="action-list">
       <button type="button" class="action-row" id="chBarcode"><b>Barcode</b><span>The stripes on the pack. Finds the product, or remembers it after you type the label once.</span></button>
       <button type="button" class="action-row" id="chLabel"><b>Nutrition label</b><span>Take a photo of the Nutrition Facts and it reads the numbers for you.</span></button></div>`);
     $('#chBarcode').onclick = () => openScanner(); $('#chLabel').onclick = () => openLabelScan();
+  }
+
+  // ---------- The HOLD button: hold it, slide left / up / right, let go ----------
+  // A broken three-piece ring shows while you hold; sliding toward a piece pops out its bubble.
+  // Left = Quick add, up = Scan, right = Voice. Letting go in the middle or sliding down cancels.
+  // A plain tap shows all three bubbles to tap. While voice is listening, the button finishes it.
+  const holdMenu = $('#holdMenu'), holdBtn = $('#fabHold'), holdBack = $('#holdBackdrop');
+  const HOLD_ACT = { left: () => openQuickAdd(), up: () => openScanChoice(), right: () => startVoice() };
+  let hold = null;
+  function holdShow(mode, dir) {   // mode: '' closed · 'hold' · 'tap'
+    holdMenu.classList.toggle('open', !!mode); holdMenu.classList.toggle('tapped', mode === 'tap');
+    holdBack.hidden = !mode; holdBtn.setAttribute('aria-expanded', String(mode === 'tap'));
+    $$('#holdMenu [data-dir]').forEach(el => el.classList.toggle('on', !!dir && el.dataset.dir === dir));
+    $$('#holdMenu .hold-opt').forEach(b => { b.tabIndex = mode === 'tap' ? 0 : -1; });
+  }
+  const dirOf = (dx, dy) => {
+    if (Math.hypot(dx, dy) < 26) return null;
+    const a = Math.atan2(dy, dx) * 180 / Math.PI;   // 0 = right, -90 = up, 90 = down
+    if (a > 45 && a < 135) return null;            // sliding down cancels
+    return a >= -45 && a <= 45 ? 'right' : a < -45 && a > -135 ? 'up' : 'left';
+  };
+  holdBtn.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (listening) { stopVoice(); return; }
+    if (holdMenu.classList.contains('tapped')) { holdShow(''); return; }
+    hold = { x: e.clientX, y: e.clientY, t: Date.now(), dir: null, moved: false };
+    try { holdBtn.setPointerCapture(e.pointerId); } catch { /* not supported */ }
+    holdShow('hold');
   });
+  holdBtn.addEventListener('pointermove', e => {
+    if (!hold) return;
+    const dx = e.clientX - hold.x, dy = e.clientY - hold.y;
+    if (Math.hypot(dx, dy) > 8) hold.moved = true;
+    const d = dirOf(dx, dy);
+    if (d !== hold.dir) { hold.dir = d; holdShow('hold', d); if (d && navigator.vibrate) try { navigator.vibrate(8); } catch { /* no buzz */ } }
+  });
+  holdBtn.addEventListener('pointerup', () => {
+    if (!hold) return; const h = hold; hold = null;
+    if (h.dir) { holdShow(''); HOLD_ACT[h.dir](); return; }
+    if (!h.moved && Date.now() - h.t < 450) return holdShow('tap');   // a tap: show all three
+    holdShow('');
+  });
+  holdBtn.addEventListener('pointercancel', () => { hold = null; holdShow(''); });
+  holdBtn.addEventListener('contextmenu', e => e.preventDefault());
+  holdBtn.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return; e.preventDefault();
+    if (listening) stopVoice(); else holdShow(holdMenu.classList.contains('tapped') ? '' : 'tap');
+  });
+  holdBack.addEventListener('click', () => holdShow(''));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && holdMenu.classList.contains('open')) holdShow(''); });
+  ['#quickBtn', '#scanAnyBtn', '#voiceBtn'].forEach(sel => $(sel).addEventListener('click', () => holdShow('')));
+  window.addEventListener('hashchange', () => holdShow(''));
 
   let scanStop = null;
   const ZXING = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
@@ -1798,8 +1835,8 @@ maCros version: ${latest ? latest.at : '?'}`;
       if (!(age >= 18 && age <= 100)) return ($('#stMsg').textContent = 'Enter an age from 18 to 100.');
       p.age = age; p.activity = $('#stAct').value;
       if (Math.abs(kg - currentKg()) >= 0.05) {
-        settings.weighIns = (settings.weighIns || []).filter(x => dayStart(x.t) !== dayStart(Date.now())).concat({ t: Date.now(), kg: Math.round(kg * 10) / 10 });
-        p.kg = Math.round(kg * 10) / 10;
+        settings.weighIns = (settings.weighIns || []).filter(x => dayStart(x.t) !== dayStart(Date.now())).concat({ t: Date.now(), kg: Math.round(kg * 1000) / 1000 });
+        p.kg = Math.round(kg * 1000) / 1000;   // to the gram, so 133 lb comes back as exactly 133 lb
       }
       const ph = activePhase();
       if (ph && phaseType(ph.type).goal) { settings.targets = phaseTargets(ph.type); settings.locks = {}; syncPhase(); }
@@ -1976,8 +2013,8 @@ maCros version: ${latest ? latest.at : '?'}`;
   }
   function logWeight(kg) {
     const w = (settings.weighIns || []).filter(x => dayStart(x.t) !== dayStart(Date.now()));   // one weigh-in per day
-    w.push({ t: Date.now(), kg: Math.round(kg * 10) / 10 }); settings.weighIns = w;
-    if (settings.profile) settings.profile.kg = Math.round(kg * 10) / 10;
+    w.push({ t: Date.now(), kg: Math.round(kg * 1000) / 1000 }); settings.weighIns = w;
+    if (settings.profile) settings.profile.kg = Math.round(kg * 1000) / 1000;
     saveSettings(); renderProgress();
     const ph = activePhase();
     const canUpdate = ph && phaseType(ph.type).goal;
@@ -2096,8 +2133,8 @@ maCros version: ${latest ? latest.at : '?'}`;
     { go: '#day', page: 'day', sel: '#dayBody .meal-head', t: 'Add food to a meal', b: 'Tap <b>+</b> next to a meal to add what you ate. The note icon beside it lets you write how the meal went.' },
     { go: '#day', page: 'day', sel: '#waterDash', t: 'Drink water', b: 'Tap the glass after every glass of water. It fills up toward your daily goal.' },
     { go: '#day', page: 'day', sel: '#dayBody [data-act="newday"]', t: 'Start a new day', b: 'When your day ends, tap <b>Start Day</b>. Days never change by themselves at midnight.' },
-    { go: '#add', sel: '#askBox', t: 'Type what you ate', b: '<i>“2 eggs and 1 cup rice”</i>, <i>“150 g chicken breast”</i>, or by calories: <i>“300 kcal nuggets”</i>. Or hold <b>Voice</b> and say it.' },
-    { go: '#add', sel: '#fabDock', t: 'Quick add, Scan, Voice', b: 'The three circles above the bar are always there. <b>Quick add</b> (left) to type calories and macros, <b>Scan</b> (middle) a barcode or a Nutrition Facts label, and <b>Voice</b> (right): hold it and say what you ate, <i>“one glass of water”</i> or your weight, then let go.' },
+    { go: '#add', sel: '#askBox', t: 'Type what you ate', b: '<i>“2 eggs and 1 cup rice”</i>, <i>“150 g chicken breast”</i>, or by calories: <i>“300 kcal nuggets”</i>. Or hold the round button and slide right for <b>Voice</b>.' },
+    { go: '#add', sel: '#fabHold', t: 'Hold and slide', b: 'Hold the round button above the bar, slide, then let go: <b>left</b> for Quick add, <b>up</b> for Scan (a barcode or a Nutrition Facts label), <b>right</b> for Voice. Just tap it to see all three.' },
     { go: '#add', sel: '#cats', t: 'Browse foods', b: 'Tap <b>Protein</b>, <b>Carbs</b>, <b>Fat</b> or <b>Fiber</b> to see the best sources, or open a category below. Foods marked <b>Estimate</b> are recipe estimates.' },
     { go: '#menu', sel: '#menuBody .menu-list', t: 'The Menu', b: '<b>Tutorial</b> for this tour and your checklist, <b>Settings</b>, and <b>Send feedback</b>. <b>Progress</b> and <b>Goals</b> have their own buttons on the bar below.' },
     { go: '#goals', sel: '#maintVal', t: 'Maintenance calories', b: 'What you burn in a normal day. Type your own number any time; your phases are built on it.' },
